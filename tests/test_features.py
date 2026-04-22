@@ -1,5 +1,3 @@
-import numpy as np
-import pytest
 
 from app.features import (
     FEATURE_NAMES,

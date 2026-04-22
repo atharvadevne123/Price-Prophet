@@ -1,7 +1,6 @@
 import logging
-import os
 from contextlib import asynccontextmanager
-from typing import Any, Dict, List, Optional
+from typing import List, Optional
 
 import numpy as np
 from fastapi import Depends, FastAPI, HTTPException

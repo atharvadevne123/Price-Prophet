@@ -8,7 +8,6 @@ from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from sklearn.ensemble import RandomForestRegressor, GradientBoostingRegressor, VotingRegressor
 from sklearn.model_selection import cross_val_score, KFold
-from sklearn.metrics import mean_squared_error
 
 try:
     from xgboost import XGBRegressor
@@ -114,7 +113,6 @@ def optimize_price(
         features[2] = new_price / max(features[1], 0.01)
 
         demand = float(predict(pipeline, features.reshape(1, -1))[0])
-        revenue = new_price * demand
         profit = (new_price - cost) * demand
 
         if profit > best_revenue:
