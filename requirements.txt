@@ -13,5 +13,5 @@ faiss-cpu==1.13.0
 httpx==0.28.1
 python-dotenv==1.2.1
 matplotlib==3.9.4
-pandas==2.2.3
+pandas==2.3.3
 pytest-cov>=7.1.0
