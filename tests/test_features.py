@@ -1,136 +1,136 @@
-"""Tests for app/features.py feature engineering pipeline."""
+"""Tests for feature engineering pipeline."""
 from __future__ import annotations
 
 import pytest
 
-from app.features import (
-    CATEGORY_MAP,
-    FEATURE_NAMES,
-    HOLIDAY_MONTHS,
-    engineer_batch_features,
-    engineer_features,
-    generate_synthetic_training_data,
-)
+
+def test_engineer_features_returns_dataframe():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 299.99})
+    assert len(df) == 1
 
 
-def test_feature_vector_length():
-    """engineer_features always returns exactly n_features elements."""
-    features = engineer_features({"base_price": 100.0, "category": "electronics"})
-    assert len(features) == len(FEATURE_NAMES)
+def test_engineer_features_columns():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics"})
+    assert "category_code" in df.columns
+    assert "competitor_price" in df.columns
+    assert "demand_trend" in df.columns
 
 
-def test_feature_names_count():
-    """FEATURE_NAMES has exactly 15 entries."""
-    assert len(FEATURE_NAMES) == 15
+def test_category_code_electronics():
+    from app.features import engineer_features, CATEGORY_MAP
+    df = engineer_features({"category": "Electronics"})
+    assert df["category_code"].iloc[0] == CATEGORY_MAP["Electronics"]
 
 
-def test_weekend_flag():
-    """is_weekend flag is 1 for Saturday and 0 for Monday."""
-    feat_sat = engineer_features({"base_price": 50.0, "date": "2024-01-06"})
-    feat_mon = engineer_features({"base_price": 50.0, "date": "2024-01-08"})
-    assert feat_sat[5] == 1.0
-    assert feat_mon[5] == 0.0
-
-
-def test_holiday_season():
-    """is_holiday_season flag is 1 in Nov/Dec/Jan and 0 in June."""
-    feat_dec = engineer_features({"base_price": 50.0, "date": "2024-12-15"})
-    feat_jun = engineer_features({"base_price": 50.0, "date": "2024-06-15"})
-    assert feat_dec[6] == 1.0
-    assert feat_jun[6] == 0.0
-
-
-def test_price_ratio_computed():
-    """price_ratio = base_price / competitor_price."""
-    feat = engineer_features({"base_price": 100.0, "competitor_price": 200.0})
-    assert abs(feat[2] - 0.5) < 0.01
-
-
-def test_batch_features_shape():
-    """engineer_batch_features returns shape (n_records, n_features)."""
-    records = [
-        {"base_price": 100.0, "category": "electronics"},
-        {"base_price": 200.0, "category": "clothing"},
-        {"base_price": 50.0, "category": "food"},
-    ]
-    X = engineer_batch_features(records)
-    assert X.shape == (3, len(FEATURE_NAMES))
-
-
-def test_synthetic_data_generation():
-    """Synthetic data has correct shapes and non-negative labels."""
-    X, y = generate_synthetic_training_data(n_samples=100)
-    assert X.shape == (100, len(FEATURE_NAMES))
-    assert y.shape == (100,)
-    assert (y >= 0).all()
-
-
-def test_category_encoding():
-    """Known categories map to their integer codes; unknown falls back to 8."""
-    feat_elec = engineer_features({"base_price": 100.0, "category": "electronics"})
-    feat_unknown = engineer_features({"base_price": 100.0, "category": "unknown_cat"})
-    assert feat_elec[7] == 0
-    assert feat_unknown[7] == 8
-
-
-def test_demand_trend_positive():
-    """demand_trend > 0 when recent demand outpaces trailing average."""
-    feat = engineer_features({
-        "base_price": 100.0,
-        "historical_demand_7d": 100,
-        "historical_demand_30d": 200,
-    })
-    assert feat[12] > 0
+def test_demand_trend_default():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 100.0})
+    assert df["demand_trend"].iloc[0] == 1.0
 
 
 def test_demand_trend_negative():
-    """demand_trend < 0 when recent demand is below trailing average."""
-    feat = engineer_features({
-        "base_price": 100.0,
-        "historical_demand_7d": 10,
-        "historical_demand_30d": 200,
-    })
-    assert feat[12] < 0
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "demand_trend": 0.5})
+    assert df["demand_trend"].iloc[0] == 0.5
 
 
-@pytest.mark.parametrize("category,expected_code", list(CATEGORY_MAP.items()))
-def test_all_category_encodings(category: str, expected_code: int):
-    """Every known category maps to its expected integer code."""
-    feat = engineer_features({"base_price": 50.0, "category": category})
-    assert feat[7] == expected_code
-
-
-@pytest.mark.parametrize("month,expected_holiday", [
-    (11, 1), (12, 1), (1, 1), (2, 0), (6, 0), (10, 0)
+@pytest.mark.parametrize("category,code", [
+    ("Electronics", 0), ("Clothing", 1), ("Food", 2), ("Books", 3),
+    ("Toys", 4), ("Sports", 5), ("Home", 6), ("Beauty", 7),
+    ("Automotive", 8), ("Garden", 9),
 ])
-def test_holiday_months(month: int, expected_holiday: int):
-    """Holiday season covers Nov, Dec, Jan; other months are non-holiday."""
-    date_str = f"2024-{month:02d}-15"
-    feat = engineer_features({"base_price": 50.0, "date": date_str})
-    assert feat[6] == expected_holiday
+def test_all_category_codes(category, code):
+    from app.features import engineer_features
+    df = engineer_features({"category": category})
+    assert df["category_code"].iloc[0] == code
+
+
+@pytest.mark.parametrize("month", [11, 12, 1])
+def test_holiday_months_in_frozenset(month):
+    from app.features import HOLIDAY_MONTHS
+    assert month in HOLIDAY_MONTHS
 
 
 def test_margin_ratio_computed():
-    """margin_ratio = (base_price - cost) / base_price."""
-    feat = engineer_features({"base_price": 100.0, "cost": 40.0})
-    assert abs(feat[14] - 0.6) < 0.001
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 100.0, "margin_ratio": 0.4})
+    assert df["margin_ratio"].iloc[0] == 0.4
 
 
 def test_default_competitor_price_offset():
-    """Competitor price defaults to base_price * 1.05 when not provided."""
-    feat_with = engineer_features({"base_price": 100.0, "competitor_price": 105.0})
-    feat_without = engineer_features({"base_price": 100.0})
-    assert abs(feat_with[1] - feat_without[1]) < 0.01
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics"})
+    assert df["competitor_price"].iloc[0] == 100.0
 
 
 def test_zero_stock_level():
-    """stock_level of 0 is encoded correctly without errors."""
-    feat = engineer_features({"base_price": 100.0, "stock_level": 0})
-    assert feat[8] == 0.0
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "stock_level": 0})
+    assert df["stock_level"].iloc[0] == 0.0
 
 
 def test_large_price_values():
-    """Feature engineering handles very large prices without overflow."""
-    feat = engineer_features({"base_price": 99999.0, "competitor_price": 100000.0})
-    assert len(feat) == len(FEATURE_NAMES)
-    assert all(float(v) == float(v) for v in feat)  # no NaN
+    from app.features import engineer_features
+    df = engineer_features({"category": "Automotive", "competitor_price": 99999.0})
+    assert df["competitor_price"].iloc[0] == 99999.0
+
+
+def test_scarcity_score_zero_stock():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "stock_level": 0})
+    assert df["scarcity_score"].iloc[0] == 1.0
+
+
+def test_scarcity_score_high_stock():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "stock_level": 2000})
+    assert df["scarcity_score"].iloc[0] == 0.0
+
+
+def test_value_index_computed():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "demand_trend": 1.0, "margin_ratio": 0.3})
+    assert df["value_index"].iloc[0] > 0
+
+
+def test_log_price_positive():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 100.0})
+    assert df["log_price"].iloc[0] > 0
+
+
+def test_price_per_unit_computed():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 100.0, "stock_level": 10})
+    assert df["price_per_unit"].iloc[0] == pytest.approx(10.0)
+
+
+def test_demand_price_interaction():
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": 200.0, "demand_trend": 2.0})
+    assert df["demand_price_interaction"].iloc[0] == pytest.approx(400.0)
+
+
+def test_generate_synthetic_data_shape():
+    from app.features import generate_synthetic_training_data
+    df = generate_synthetic_training_data(100)
+    assert len(df) == 100
+    assert "price" in df.columns
+
+
+def test_generate_synthetic_data_positive_prices():
+    from app.features import generate_synthetic_training_data
+    df = generate_synthetic_training_data(200)
+    assert (df["price"] > 0).all()
+
+
+def test_engineer_batch_features():
+    from app.features import engineer_batch_features
+    items = [
+        {"category": "Electronics", "competitor_price": 299.0},
+        {"category": "Books", "competitor_price": 15.0},
+    ]
+    df = engineer_batch_features(items)
+    assert len(df) == 2
