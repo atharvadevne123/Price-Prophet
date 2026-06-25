@@ -1,98 +1,125 @@
-"""Airflow DAG for automated daily model retraining and drift-gated deployment."""
-from datetime import datetime, timedelta
-
-try:
-    from airflow import DAG
-    from airflow.operators.bash import BashOperator
-    from airflow.operators.python import PythonOperator
-    HAS_AIRFLOW = True
-except ImportError:
-    HAS_AIRFLOW = False
+"""Apache Airflow DAG: automated model retraining with drift-triggered execution."""
+from __future__ import annotations
 
 import logging
+import os
+from datetime import datetime, timedelta
+from typing import Any
+
+from airflow import DAG
+from airflow.operators.python import PythonOperator
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ARGS = {
-    "owner": "reflective-lantern",
+DATABASE_URL: str = os.getenv("DATABASE_URL", "sqlite:///./prices.db")
+DRIFT_THRESHOLD_KS: float = float(os.getenv("DRIFT_THRESHOLD_KS", "0.05"))
+DRIFT_THRESHOLD_PSI: float = float(os.getenv("DRIFT_THRESHOLD_PSI", "0.2"))
+MIN_SAMPLES_FOR_DRIFT: int = int(os.getenv("MIN_SAMPLES_FOR_DRIFT", "50"))
+
+default_args: dict[str, Any] = {
+    "owner": "ml-team",
     "depends_on_past": False,
     "email_on_failure": False,
     "email_on_retry": False,
     "retries": 1,
     "retry_delay": timedelta(minutes=5),
+    "start_date": datetime(2024, 1, 1),
 }
 
-API_BASE = "http://price-prophet-api:8000"
+
+def check_drift(**context: Any) -> bool:
+    """Query the database for drift and push result to XCom.
+
+    Returns:
+        True if retraining is needed, False otherwise.
+    """
+    from sqlalchemy import create_engine, text
+    from app.monitoring import compute_drift, compute_psi
+
+    engine = create_engine(DATABASE_URL)
+    with engine.connect() as conn:
+        rows = conn.execute(text(
+            "SELECT predicted_price FROM predictions "
+            "ORDER BY created_at ASC LIMIT 2000"
+        )).fetchall()
+    prices = [float(r[0]) for r in rows if r[0] is not None]
+
+    if len(prices) < MIN_SAMPLES_FOR_DRIFT:
+        logger.info("Insufficient data (%d samples). Skipping drift check.", len(prices))
+        context["ti"].xcom_push(key="should_retrain", value=False)
+        return False
+
+    mid = len(prices) // 2
+    drift = compute_drift(prices[:mid], prices[mid:])
+    psi = float(drift.get("psi", 0.0))
+    ks_p = float(drift.get("p_value", 1.0))
+
+    should_retrain = drift["is_drifted"]
+    logger.info(
+        "Drift check: KS_p=%.4f PSI=%.4f should_retrain=%s",
+        ks_p, psi, should_retrain,
+    )
+    context["ti"].xcom_push(key="should_retrain", value=should_retrain)
+    context["ti"].xcom_push(key="drift_result", value=drift)
+    return should_retrain
 
 
-def check_drift(**context):
-    import requests
-    resp = requests.get(f"{API_BASE}/drift", timeout=10)
-    resp.raise_for_status()
-    data = resp.json()
-    drift_rate = data.get("drift_rate", 0)
-    n_recent = data.get("n_current_samples", 0)
+def retrain_model(**context: Any) -> dict[str, Any]:
+    """Retrain the model if drift was detected.
 
-    logger.info("Drift check: rate=%.3f n_recent=%d", drift_rate, n_recent)
+    Returns:
+        Training metrics dict, or empty dict if retraining was skipped.
+    """
+    should_retrain = context["ti"].xcom_pull(key="should_retrain", task_ids="check_drift")
+    if not should_retrain:
+        logger.info("No drift detected. Skipping retraining.")
+        return {}
 
-    if n_recent < 20:
-        context["task_instance"].xcom_push(key="needs_retrain", value=False)
-        logger.info("Skipping retrain — insufficient recent predictions (%d)", n_recent)
-        return
+    logger.info("Drift detected. Starting model retraining...")
+    from app.features import generate_synthetic_training_data
+    from app.model import train_model
 
-    needs_retrain = drift_rate > 0.3
-    context["task_instance"].xcom_push(key="needs_retrain", value=needs_retrain)
-    context["task_instance"].xcom_push(key="drifted_features", value=data.get("drifted_features", []))
-    logger.info("Retrain needed: %s (drift_rate=%.3f)", needs_retrain, drift_rate)
-
-
-def retrain_model(**context):
-    needs_retrain = context["task_instance"].xcom_pull(key="needs_retrain")
-    if not needs_retrain:
-        logger.info("No retrain needed — skipping")
-        return {"skipped": True}
-
-    import requests
-    resp = requests.post(f"{API_BASE}/train", json={"n_samples": 5000}, timeout=120)
-    resp.raise_for_status()
-    metrics = resp.json()
-    logger.info("Retrain complete: %s", metrics)
+    df = generate_synthetic_training_data(8000)
+    metrics = train_model(df)
+    logger.info("Retraining complete: %s", metrics)
     return metrics
 
 
-def log_run_metrics(**context):
-    import json
-    from datetime import datetime
-    run_date = datetime.utcnow().isoformat()
-    metrics = context["task_instance"].xcom_pull(task_ids="retrain_model") or {}
-    log_entry = {"date": run_date, "metrics": metrics, "drift_checked": True}
-    logger.info("DAG run complete: %s", json.dumps(log_entry))
+def send_notification(**context: Any) -> None:
+    """Log a notification summary after retraining."""
+    should_retrain = context["ti"].xcom_pull(key="should_retrain", task_ids="check_drift")
+    drift_result = context["ti"].xcom_pull(key="drift_result", task_ids="check_drift") or {}
+    status = "RETRAINED" if should_retrain else "SKIPPED (no drift)"
+    logger.info(
+        "Retraining pipeline complete. Status=%s KS=%.4f PSI=%.4f",
+        status,
+        drift_result.get("ks_statistic", 0.0),
+        drift_result.get("psi", 0.0),
+    )
 
 
-if HAS_AIRFLOW:
-    with DAG(
-        dag_id="price_prophet_retrain",
-        default_args=DEFAULT_ARGS,
-        description="Daily drift check and conditional model retraining for price-prophet",
-        schedule="0 2 * * *",
-        start_date=datetime(2024, 1, 1),
-        catchup=False,
-        tags=["ml", "price-prophet", "retraining"],
-    ) as dag:
-        t_drift = PythonOperator(
-            task_id="check_drift",
-            python_callable=check_drift,
-        )
-        t_retrain = PythonOperator(
-            task_id="retrain_model",
-            python_callable=retrain_model,
-        )
-        t_log = PythonOperator(
-            task_id="log_run_metrics",
-            python_callable=log_run_metrics,
-        )
-        t_health = BashOperator(
-            task_id="health_check",
-            bash_command=f"curl -sf {API_BASE}/health || exit 1",
-        )
-        t_health >> t_drift >> t_retrain >> t_log
+with DAG(
+    dag_id="price_prophet_retrain",
+    default_args=default_args,
+    description="Automated retraining pipeline with KS + PSI drift detection",
+    schedule_interval="0 2 * * *",
+    catchup=False,
+    tags=["ml", "price-prophet", "retraining"],
+) as dag:
+
+    check_drift_task = PythonOperator(
+        task_id="check_drift",
+        python_callable=check_drift,
+    )
+
+    retrain_task = PythonOperator(
+        task_id="retrain_model",
+        python_callable=retrain_model,
+    )
+
+    notify_task = PythonOperator(
+        task_id="send_notification",
+        python_callable=send_notification,
+    )
+
+    check_drift_task >> retrain_task >> notify_task
