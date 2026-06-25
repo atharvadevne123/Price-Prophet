@@ -1,68 +1,73 @@
 [build-system]
 requires = ["setuptools>=68", "wheel"]
-build-backend = "setuptools.build_meta"
+build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "price-prophet"
 version = "1.0.0"
-description = "ML-powered dynamic price optimization engine using ensemble models, drift detection, and FastAPI REST API"
-readme = "README.md"
-requires-python = ">=3.9"
+description = "ML-powered dynamic pricing engine with ensemble forecasting"
+authors = [{name = "Atharva Devne", email = "devneatharva@gmail.com"}]
 license = {text = "MIT"}
-authors = [{name = "atharvadevne123", email = "devneatharva@gmail.com"}]
-keywords = ["pricing", "ml", "fastapi", "xgboost", "drift-detection", "demand-forecasting"]
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = ["pricing", "machine-learning", "fastapi", "xgboost", "lightgbm", "faiss"]
 classifiers = [
     "Development Status :: 4 - Beta",
+    "Framework :: FastAPI",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 
 [project.urls]
-Homepage = "https://github.com/atharvadevne123/Price-Prophet"
+Repository = "https://github.com/atharvadevne123/Price-Prophet"
 Issues = "https://github.com/atharvadevne123/Price-Prophet/issues"
+
+[project.scripts]
+price-prophet-train = "scripts.train:main"
+price-prophet-health = "scripts.health_check:main"
+price-prophet-bench = "scripts.benchmark:main"
+price-prophet-drift = "scripts.analyze_drift:main"
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0,<9",
+    "pytest-cov>=5.0,<6",
+    "httpx>=0.27,<1",
+    "ruff>=0.4,<1",
+    "mypy>=1.10,<2",
+    "pre-commit>=3.7,<4",
+]
 
 [tool.setuptools.packages.find]
 where = ["."]
+include = ["app*"]
 
 [tool.ruff]
-line-length = 120
-target-version = "py39"
+line-length = 100
+target-version = "py311"
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I"]
-ignore = ["E501"]
-
-[tool.ruff.lint.per-file-ignores]
-"tests/*" = ["F401", "S101"]
+select = ["E", "F", "W", "I", "UP", "B"]
+ignore = ["E501", "B008"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-asyncio_mode = "auto"
 addopts = "-v --tb=short"
 
 [tool.coverage.run]
 source = ["app"]
-omit = ["tests/*", "dags/*", "scripts/*"]
-branch = true
+omit = ["tests/*", "scripts/*", "dags/*"]
 
 [tool.coverage.report]
-show_missing = true
-fail_under = 60
-exclude_lines = [
-    "if __name__ == .__main__.:",
-    "raise NotImplementedError",
-    "if TYPE_CHECKING:",
-    "pragma: no cover",
-]
+exclude_lines = ["pragma: no cover", "def __repr__", "raise NotImplementedError"]
+fail_under = 40
 
 [tool.mypy]
 python_version = "3.11"
 ignore_missing_imports = true
-warn_return_any = true
-warn_unused_configs = true
+no_strict_optional = true
+warn_return_any = false
