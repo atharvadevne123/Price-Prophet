@@ -1,67 +1,55 @@
-"""Ensemble ML model training, prediction, and price optimization."""
+"""ML model: ensemble training, prediction, and feature importance."""
 from __future__ import annotations
 
-import json
 import logging
 import os
-import uuid
-from typing import Optional
+import pickle
+from pathlib import Path
+from typing import Any
 
-import joblib
 import numpy as np
-from sklearn.ensemble import (
-    GradientBoostingRegressor,
-    RandomForestRegressor,
-    VotingRegressor,
-)
+import pandas as pd
+from sklearn.ensemble import RandomForestRegressor, VotingRegressor
+from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
+from xgboost import XGBRegressor
+from lightgbm import LGBMRegressor
 
-try:
-    from xgboost import XGBRegressor
-    HAS_XGB: bool = True
-except ImportError:
-    HAS_XGB = False
-
-try:
-    from lightgbm import LGBMRegressor
-    HAS_LGB: bool = True
-except ImportError:
-    HAS_LGB = False
-
-from app.features import FEATURE_NAMES
+from app.features import engineer_features
 
 logger = logging.getLogger(__name__)
 
-MODEL_PATH: str = os.getenv("MODEL_PATH", "model.joblib")
-METRICS_PATH: str = os.getenv("METRICS_PATH", "metrics.json")
+MODEL_PATH: str = os.getenv("MODEL_PATH", "models/price_model.pkl")
+METRICS_PATH: str = os.getenv("METRICS_PATH", "models/metrics.json")
+N_CV_FOLDS: int = 5
 
 
 def build_ensemble() -> VotingRegressor:
-    """Build a VotingRegressor ensemble from available estimators.
+    """Build the base VotingRegressor ensemble.
 
     Returns:
-        VotingRegressor with RandomForest always included, plus XGBoost and
-        LightGBM if installed, or GradientBoosting as a fallback.
+        Unfitted :class:`VotingRegressor` with XGB, LGBM, and RF estimators.
     """
     estimators: list[tuple[str, object]] = [
-        ("rf", RandomForestRegressor(n_estimators=100, max_depth=8, random_state=42))
+        ("xgb", XGBRegressor(n_estimators=200, max_depth=6, learning_rate=0.05,
+                              subsample=0.8, colsample_bytree=0.8,
+                              random_state=42, verbosity=0)),
+        ("lgbm", LGBMRegressor(n_estimators=200, max_depth=6, learning_rate=0.05,
+                                subsample=0.8, colsample_bytree=0.8,
+                                random_state=42, verbose=-1)),
+        ("rf", RandomForestRegressor(n_estimators=200, max_depth=8,
+                                      random_state=42, n_jobs=-1)),
     ]
-    if HAS_XGB:
-        estimators.append(("xgb", XGBRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42, eval_metric="rmse")))
-    if HAS_LGB:
-        estimators.append(("lgb", LGBMRegressor(n_estimators=100, max_depth=4, learning_rate=0.1, random_state=42, verbose=-1)))
-    if not HAS_XGB and not HAS_LGB:
-        estimators.append(("gbm", GradientBoostingRegressor(n_estimators=100, max_depth=4, random_state=42)))
     return VotingRegressor(estimators=estimators)
 
 
 def build_pipeline() -> Pipeline:
-    """Build the full sklearn Pipeline with StandardScaler and ensemble model.
+    """Wrap the ensemble in a StandardScaler pipeline.
 
     Returns:
-        Unfitted sklearn Pipeline.
+        Unfitted :class:`Pipeline` with scaler + VotingRegressor.
     """
     return Pipeline([
         ("scaler", StandardScaler()),
@@ -69,126 +57,164 @@ def build_pipeline() -> Pipeline:
     ])
 
 
-def train_model(X: np.ndarray, y: np.ndarray) -> dict[str, object]:
-    """Train the ensemble pipeline with 5-fold CV and persist to disk.
+def train_model(
+    df: pd.DataFrame,
+    model_path: str = MODEL_PATH,
+    run_cv: bool = True,
+) -> dict[str, object]:
+    """Train the ensemble pipeline and persist it to disk.
 
     Args:
-        X: Feature matrix of shape (n_samples, n_features).
-        y: Target demand array of shape (n_samples,).
+        df: Training DataFrame with features and a ``price`` target column.
+        model_path: Path to write the pickled model.
+        run_cv: Whether to compute cross-validation MAE.
 
     Returns:
-        Metrics dict with run_id, rmse_mean, rmse_std, n_features, n_samples,
-        feature_names, and estimators.
+        Dict with ``mae``, ``rmse``, ``r2``, and optionally ``cv_mae_mean``.
     """
-    pipeline: Pipeline = build_pipeline()
-    kf: KFold = KFold(n_splits=5, shuffle=True, random_state=42)
+    feature_cols = [c for c in df.columns if c != "price"]
+    X = df[feature_cols].values
+    y = df["price"].values
 
-    neg_mse_scores: np.ndarray = cross_val_score(pipeline, X, y, cv=kf, scoring="neg_mean_squared_error")
-    rmse_scores: np.ndarray = np.sqrt(-neg_mse_scores)
+    pipeline = build_pipeline()
+
+    cv_mae: float | None = None
+    if run_cv and len(X) >= N_CV_FOLDS * 10:
+        logger.info("Running %d-fold cross-validation...", N_CV_FOLDS)
+        kf = KFold(n_splits=N_CV_FOLDS, shuffle=True, random_state=42)
+        cv_scores = cross_val_score(pipeline, X, y, cv=kf, scoring="neg_mean_absolute_error")
+        cv_mae = float(-cv_scores.mean())
+        logger.info("CV MAE=%.4f ± %.4f", cv_mae, cv_scores.std())
 
     pipeline.fit(X, y)
+    preds = pipeline.predict(X)
 
-    run_id: str = str(uuid.uuid4())[:8]
-    metrics: dict[str, object] = {
-        "run_id": run_id,
-        "rmse_mean": float(rmse_scores.mean()),
-        "rmse_std": float(rmse_scores.std()),
-        "n_features": X.shape[1],
-        "n_samples": X.shape[0],
-        "feature_names": FEATURE_NAMES,
-        "estimators": [name for name, _ in build_ensemble().estimators],
-    }
+    mae = float(mean_absolute_error(y, preds))
+    rmse = float(mean_squared_error(y, preds) ** 0.5)
+    r2 = float(r2_score(y, preds))
 
-    joblib.dump(pipeline, MODEL_PATH)
+    Path(model_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(model_path, "wb") as f:
+        pickle.dump({"pipeline": pipeline, "feature_cols": feature_cols}, f)
+
+    import json
+    metrics: dict[str, object] = {"mae": round(mae, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}
+    if cv_mae is not None:
+        metrics["cv_mae_mean"] = round(cv_mae, 4)
+    Path(METRICS_PATH).parent.mkdir(parents=True, exist_ok=True)
     with open(METRICS_PATH, "w") as f:
         json.dump(metrics, f, indent=2)
 
-    logger.info("Model trained: run_id=%s rmse=%.4f+/-%.4f", run_id, rmse_scores.mean(), rmse_scores.std())
+    logger.info("Trained: MAE=%.4f RMSE=%.4f R2=%.4f", mae, rmse, r2)
     return metrics
 
 
-def load_model() -> Pipeline:
-    """Load the persisted model pipeline, training on synthetic data if missing.
-
-    Returns:
-        Fitted sklearn Pipeline ready for prediction.
-    """
-    if not os.path.exists(MODEL_PATH):
-        logger.warning("No model found at %s — training on synthetic data", MODEL_PATH)
-        from app.features import generate_synthetic_training_data
-        X, y = generate_synthetic_training_data()
-        train_model(X, y)
-    return joblib.load(MODEL_PATH)
-
-
-def predict(pipeline: Pipeline, X: np.ndarray) -> np.ndarray:
-    """Run inference on the fitted pipeline.
+def load_model(model_path: str = MODEL_PATH) -> dict[str, Any]:
+    """Load a trained model bundle from disk.
 
     Args:
-        pipeline: Fitted sklearn Pipeline.
-        X: Feature matrix of shape (n_samples, n_features).
+        model_path: Path to the pickled model file.
 
     Returns:
-        Demand prediction array of shape (n_samples,).
+        Dict with ``pipeline`` and ``feature_cols`` keys.
+
+    Raises:
+        FileNotFoundError: If model_path does not exist.
     """
-    return pipeline.predict(X)
+    if not Path(model_path).exists():
+        raise FileNotFoundError(f"No trained model at {model_path}. Run POST /train first.")
+    with open(model_path, "rb") as f:
+        return pickle.load(f)
 
 
-def load_metrics() -> dict[str, object]:
-    """Load the most recent training metrics from disk.
+def predict(features: dict[str, Any], model_path: str = MODEL_PATH) -> float:
+    """Predict the optimal price for a given feature dict.
+
+    Args:
+        features: Raw request feature dict (pre-engineer_features).
+        model_path: Path to the trained model.
 
     Returns:
-        Metrics dict, or empty dict if no metrics file exists.
+        Predicted price as a float.
     """
-    if os.path.exists(METRICS_PATH):
-        with open(METRICS_PATH) as f:
+    bundle = load_model(model_path)
+    df = engineer_features(features)
+    X = df[bundle["feature_cols"]].values
+    return float(bundle["pipeline"].predict(X)[0])
+
+
+def load_metrics(model_path: str = METRICS_PATH) -> dict[str, Any]:
+    """Load model evaluation metrics from the metrics JSON file.
+
+    Args:
+        model_path: Path to the metrics JSON file.
+
+    Returns:
+        Dict with metric values, or empty dict if file not found.
+    """
+    import json
+    try:
+        with open(model_path) as f:
             return json.load(f)
-    return {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def get_feature_importance(model_path: str = MODEL_PATH) -> dict[str, float]:
+    """Extract feature importances from the Random Forest sub-estimator.
+
+    Args:
+        model_path: Path to the trained model.
+
+    Returns:
+        Dict mapping feature name -> importance score (0–1, sums to 1).
+
+    Raises:
+        FileNotFoundError: If model not trained.
+    """
+    bundle = load_model(model_path)
+    pipeline = bundle["pipeline"]
+    feature_cols = bundle["feature_cols"]
+    voting: VotingRegressor = pipeline.named_steps["model"]
+    rf_est = None
+    for name, est in voting.estimators_:
+        if name == "rf":
+            rf_est = est
+            break
+    if rf_est is None or not hasattr(rf_est, "feature_importances_"):
+        return {}
+    importances = rf_est.feature_importances_
+    total = importances.sum() or 1.0
+    return {col: round(float(imp / total), 6) for col, imp in zip(feature_cols, importances)}
 
 
 def optimize_price(
-    pipeline: Pipeline,
-    base_features: np.ndarray,
-    cost: float,
-    price_range: tuple[float, float] = (0.7, 1.5),
+    features: dict[str, Any],
+    price_min: float = 1.0,
+    price_max: float = 1000.0,
     n_steps: int = 20,
-) -> dict[str, float]:
-    """Grid-search over price multipliers to maximize profit.
+    model_path: str = MODEL_PATH,
+) -> dict[str, Any]:
+    """Find the price in [price_min, price_max] that maximises predicted value.
 
     Args:
-        pipeline: Fitted sklearn Pipeline.
-        base_features: Single-record feature array of shape (n_features,).
-        cost: Unit cost of the product.
-        price_range: (min_mult, max_mult) multiplier range to search.
-        n_steps: Number of evenly-spaced multipliers to evaluate.
+        features: Raw feature dict.
+        price_min: Lower bound of the price search range.
+        price_max: Upper bound of the price search range.
+        n_steps: Number of candidate prices to evaluate.
+        model_path: Path to the trained model.
 
     Returns:
-        Dict with optimized_price, expected_demand, expected_profit, price_multiplier.
+        Dict with ``optimal_price`` and ``predicted_value``.
     """
-    best_price_mult: float = 1.0
-    best_revenue: float = float("-inf")
-    best_demand: float = 0.0
-    best_new_price: float = float(base_features[0])
-
-    for mult in np.linspace(price_range[0], price_range[1], n_steps):
-        features: np.ndarray = base_features.copy()
-        base_price: float = float(features[0])
-        new_price: float = base_price * mult
-        features[0] = new_price
-        features[2] = new_price / max(float(features[1]), 0.01)
-
-        demand: float = float(predict(pipeline, features.reshape(1, -1))[0])
-        profit: float = (new_price - cost) * demand
-
-        if profit > best_revenue:
-            best_revenue = profit
-            best_price_mult = float(mult)
-            best_demand = demand
-            best_new_price = new_price
-
-    return {
-        "optimized_price": round(best_new_price, 2),
-        "expected_demand": round(best_demand, 2),
-        "expected_profit": round(best_revenue, 2),
-        "price_multiplier": round(best_price_mult, 3),
-    }
+    candidates = np.linspace(price_min, price_max, n_steps)
+    best_price = float(candidates[0])
+    best_val = float("-inf")
+    for price in candidates:
+        f = dict(features)
+        f["competitor_price"] = float(price)
+        val = predict(f, model_path)
+        if val > best_val:
+            best_val = val
+            best_price = float(price)
+    return {"optimal_price": round(best_price, 2), "predicted_value": round(best_val, 2)}
