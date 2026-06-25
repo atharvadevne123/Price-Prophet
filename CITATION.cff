@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use Price-Prophet in your research, please cite it as follows."
+type: software
+title: "Price-Prophet: ML-powered dynamic pricing engine"
+abstract: >
+  Price-Prophet is a production-ready FastAPI service that predicts optimal
+  product prices using a VotingRegressor ensemble of XGBoost, LightGBM, and
+  RandomForest. It features FAISS-based semantic retrieval, KS-test and PSI
+  drift monitoring, and an Apache Airflow DAG for automated retraining.
+authors:
+  - family-names: "Devne"
+    given-names: "Atharva"
+    email: "devneatharva@gmail.com"
+repository-code: "https://github.com/atharvadevne123/Price-Prophet"
+license: MIT
+version: "1.0.0"
+date-released: "2024-01-15"
+keywords:
+  - pricing
+  - machine-learning
+  - ensemble
+  - fastapi
+  - xgboost
+  - lightgbm
+  - faiss
+  - drift-detection
