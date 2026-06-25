@@ -1,138 +1,144 @@
-"""Tests for app/model.py ensemble ML model."""
+"""Comprehensive tests for ML model training, prediction, and utilities."""
 from __future__ import annotations
 
+import pytest
+import tempfile
 import os
 
-import numpy as np
-import pytest
 
-from app.features import FEATURE_NAMES, generate_synthetic_training_data
-from app.model import build_ensemble, build_pipeline, load_metrics, optimize_price, predict, train_model
-
-
-@pytest.fixture(scope="module")
-def trained_pipeline():
-    """Train a model on small synthetic dataset once per test module."""
-    X, y = generate_synthetic_training_data(n_samples=300)
-    train_model(X, y)
-    from app.model import load_model
-    return load_model()
+@pytest.fixture
+def tmp_model(tmp_path):
+    """Return a temp path for the model file."""
+    return str(tmp_path / "model.pkl")
 
 
-def test_pipeline_builds():
-    """Pipeline has scaler and model steps."""
-    pipeline = build_pipeline()
-    assert pipeline is not None
-    steps = dict(pipeline.steps)
-    assert "scaler" in steps
-    assert "model" in steps
+@pytest.fixture
+def tmp_metrics(tmp_path):
+    """Return a temp path for the metrics file."""
+    return str(tmp_path / "metrics.json")
 
 
-def test_ensemble_has_at_least_one_estimator():
-    """Ensemble always includes at least one estimator (RandomForest minimum)."""
-    ensemble = build_ensemble()
-    assert len(ensemble.estimators) >= 1
-    names = [name for name, _ in ensemble.estimators]
-    assert "rf" in names
+@pytest.fixture
+def trained_bundle(tmp_model, tmp_metrics, monkeypatch):
+    """Train a model on small synthetic data and return (metrics, model_path)."""
+    monkeypatch.setenv("MODEL_PATH", tmp_model)
+    monkeypatch.setenv("METRICS_PATH", tmp_metrics)
+    from app.features import generate_synthetic_training_data
+    from app.model import train_model
+    df = generate_synthetic_training_data(200)
+    metrics = train_model(df, model_path=tmp_model, run_cv=False)
+    return metrics, tmp_model
 
 
-def test_train_returns_metrics():
-    """train_model returns expected keys with valid values."""
-    X, y = generate_synthetic_training_data(n_samples=200)
-    metrics = train_model(X, y)
-    assert "run_id" in metrics
-    assert "rmse_mean" in metrics
-    assert metrics["rmse_mean"] >= 0
-    assert metrics["n_features"] == len(FEATURE_NAMES)
-    assert metrics["n_samples"] == 200
+def test_build_ensemble_has_three_estimators():
+    from app.model import build_ensemble
+    ens = build_ensemble()
+    assert len(ens.estimators) == 3
 
 
-def test_predict_shape(trained_pipeline):
-    """predict returns array of shape (n_samples,)."""
-    X, _ = generate_synthetic_training_data(n_samples=10)
-    preds = predict(trained_pipeline, X)
-    assert preds.shape == (10,)
+def test_build_ensemble_has_at_least_one_estimator():
+    from app.model import build_ensemble
+    ens = build_ensemble()
+    assert len(ens.estimators) >= 1
 
 
-def test_predict_non_negative(trained_pipeline):
-    """Most predictions are non-negative (demand cannot be negative)."""
-    X, _ = generate_synthetic_training_data(n_samples=50)
-    preds = predict(trained_pipeline, X)
-    assert (preds >= 0).mean() > 0.8
+def test_build_pipeline_has_scaler():
+    from app.model import build_pipeline
+    pipe = build_pipeline()
+    assert "scaler" in pipe.named_steps
 
 
-def test_optimize_price_returns_dict(trained_pipeline):
-    """optimize_price returns dict with required keys and positive price."""
-    X, _ = generate_synthetic_training_data(n_samples=1)
-    features = X[0]
-    cost = features[0] * 0.6
-    result = optimize_price(trained_pipeline, features, cost)
-    assert "optimized_price" in result
-    assert "expected_demand" in result
-    assert "expected_profit" in result
-    assert result["optimized_price"] > 0
+def test_train_model_returns_metrics(trained_bundle):
+    metrics, _ = trained_bundle
+    assert "mae" in metrics
+    assert "rmse" in metrics
+    assert "r2" in metrics
 
 
-def test_cross_val_5_fold():
-    """5-fold CV produces 5 RMSE scores, all non-negative."""
-    from sklearn.model_selection import KFold, cross_val_score
-    X, y = generate_synthetic_training_data(n_samples=300)
-    pipeline = build_pipeline()
-    kf = KFold(n_splits=5, shuffle=True, random_state=42)
-    scores = cross_val_score(pipeline, X, y, cv=kf, scoring="neg_mean_squared_error")
-    assert len(scores) == 5
-    rmse_scores = np.sqrt(-scores)
-    assert all(r >= 0 for r in rmse_scores)
+def test_train_model_mae_positive(trained_bundle):
+    metrics, _ = trained_bundle
+    assert metrics["mae"] > 0
 
 
-def test_model_persisted_to_disk():
-    """train_model writes model.joblib to disk."""
-    X, y = generate_synthetic_training_data(n_samples=200)
-    train_model(X, y)
-    from app.model import MODEL_PATH
-    assert os.path.exists(MODEL_PATH)
+def test_model_persisted_to_disk(trained_bundle, tmp_model):
+    _, model_path = trained_bundle
+    assert os.path.exists(model_path)
 
 
-def test_metrics_persisted_to_disk():
-    """train_model writes metrics.json to disk."""
-    X, y = generate_synthetic_training_data(n_samples=200)
-    train_model(X, y)
-    from app.model import METRICS_PATH
-    assert os.path.exists(METRICS_PATH)
+def test_metrics_persisted_to_disk(trained_bundle, tmp_metrics):
+    _, _ = trained_bundle
+    assert os.path.exists(tmp_metrics)
 
 
-def test_load_metrics_returns_dict():
-    """load_metrics returns a non-empty dict after training."""
-    X, y = generate_synthetic_training_data(n_samples=200)
-    train_model(X, y)
-    metrics = load_metrics()
-    assert isinstance(metrics, dict)
-    assert len(metrics) > 0
+def test_load_metrics_returns_dict(trained_bundle, tmp_metrics):
+    _, _ = trained_bundle
+    from app.model import load_metrics
+    m = load_metrics(tmp_metrics)
+    assert isinstance(m, dict)
 
 
-def test_optimize_price_range(trained_pipeline):
-    """optimize_price multiplier stays within the requested range."""
-    X, _ = generate_synthetic_training_data(n_samples=1)
-    features = X[0]
-    cost = features[0] * 0.5
-    result = optimize_price(trained_pipeline, features, cost, price_range=(0.8, 1.2))
-    base = float(features[0])
-    assert result["optimized_price"] >= base * 0.8 * 0.99
-    assert result["optimized_price"] <= base * 1.2 * 1.01
+def test_predict_returns_positive(trained_bundle):
+    _, model_path = trained_bundle
+    from app.model import predict
+    features = {"category": "Electronics", "stock_level": 50,
+                "competitor_price": 299.99, "demand_trend": 1.2}
+    result = predict(features, model_path=model_path)
+    assert result > 0
+
+
+def test_predict_single_sample(trained_bundle):
+    _, model_path = trained_bundle
+    from app.model import predict
+    features = {"category": "Books", "stock_level": 10,
+                "competitor_price": 20.0, "demand_trend": 0.8}
+    result = predict(features, model_path=model_path)
+    assert isinstance(result, float)
+
+
+def test_optimize_price_range(trained_bundle):
+    _, model_path = trained_bundle
+    from app.model import optimize_price
+    result = optimize_price(
+        {"category": "Electronics", "stock_level": 50, "demand_trend": 1.0},
+        price_min=50.0, price_max=500.0, n_steps=10, model_path=model_path,
+    )
+    assert 50.0 <= result["optimal_price"] <= 500.0
 
 
 @pytest.mark.parametrize("n_steps", [5, 10, 20])
-def test_optimize_price_n_steps(trained_pipeline, n_steps: int):
-    """optimize_price works correctly for different step counts."""
-    X, _ = generate_synthetic_training_data(n_samples=1)
-    features = X[0]
-    result = optimize_price(trained_pipeline, features, cost=float(features[0]) * 0.6, n_steps=n_steps)
-    assert result["optimized_price"] > 0
-    assert "price_multiplier" in result
+def test_optimize_price_n_steps(trained_bundle, n_steps):
+    _, model_path = trained_bundle
+    from app.model import optimize_price
+    result = optimize_price(
+        {"category": "Electronics", "stock_level": 50, "demand_trend": 1.0},
+        n_steps=n_steps, model_path=model_path,
+    )
+    assert "optimal_price" in result
 
 
-def test_predict_single_sample(trained_pipeline):
-    """predict on a single sample returns a length-1 array."""
-    X, _ = generate_synthetic_training_data(n_samples=1)
-    preds = predict(trained_pipeline, X)
-    assert preds.shape == (1,)
+def test_get_feature_importance_returns_dict(trained_bundle):
+    _, model_path = trained_bundle
+    from app.model import get_feature_importance
+    imp = get_feature_importance(model_path=model_path)
+    assert isinstance(imp, dict)
+    if imp:
+        total = sum(imp.values())
+        assert abs(total - 1.0) < 0.01
+
+
+def test_load_model_raises_on_missing():
+    from app.model import load_model
+    with pytest.raises(FileNotFoundError):
+        load_model("/nonexistent/path/model.pkl")
+
+
+def test_train_with_cv(tmp_path):
+    from app.features import generate_synthetic_training_data
+    from app.model import train_model
+    model_path = str(tmp_path / "model.pkl")
+    metrics_path = str(tmp_path / "metrics.json")
+    import os
+    os.environ["METRICS_PATH"] = metrics_path
+    df = generate_synthetic_training_data(300)
+    metrics = train_model(df, model_path=model_path, run_cv=True)
+    assert "mae" in metrics
