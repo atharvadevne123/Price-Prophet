@@ -1,122 +1,142 @@
-"""Drift detection and prediction health monitoring."""
+"""Statistical drift monitoring with KS-test and PSI."""
 from __future__ import annotations
 
-import json
 import logging
-import os
+from typing import Any
 
 import numpy as np
-from scipy.stats import ks_2samp
-
-from app.features import FEATURE_NAMES
+from scipy import stats
 
 logger = logging.getLogger(__name__)
 
-REFERENCE_STATS_PATH: str = os.getenv("REFERENCE_STATS_PATH", "reference_stats.json")
+_PSI_BINS: int = 10
+_PSI_DRIFT_THRESHOLD: float = 0.2
+_KS_DRIFT_THRESHOLD: float = 0.05
 
 
-def compute_drift(reference: list[float], current: list[float]) -> dict[str, object]:
-    """Run a two-sample KS test to detect distribution shift.
+def compute_psi(
+    reference: list[float],
+    current: list[float],
+    bins: int = _PSI_BINS,
+) -> float:
+    """Compute Population Stability Index (PSI) between two distributions.
+
+    PSI < 0.1: no significant change
+    PSI 0.1–0.2: minor change
+    PSI > 0.2: major change (drift)
 
     Args:
-        reference: Reference distribution samples (baseline).
-        current: Current distribution samples to compare against reference.
+        reference: Reference (training) distribution values.
+        current: Current (production) distribution values.
+        bins: Number of histogram bins.
 
     Returns:
-        Dict with ks_statistic, p_value, drift_detected (bool), or an error
-        key if there are fewer than 5 samples in either distribution.
+        PSI score as a float.
     """
-    if len(reference) < 5 or len(current) < 5:
-        return {"error": "Not enough data for drift test", "drift_detected": False}
-    stat, p = ks_2samp(reference, current)
+    if len(reference) < 2 or len(current) < 2:
+        return 0.0
+    ref_arr = np.array(reference, dtype=float)
+    cur_arr = np.array(current, dtype=float)
+    breakpoints = np.linspace(
+        min(ref_arr.min(), cur_arr.min()),
+        max(ref_arr.max(), cur_arr.max()),
+        bins + 1,
+    )
+    ref_counts, _ = np.histogram(ref_arr, bins=breakpoints)
+    cur_counts, _ = np.histogram(cur_arr, bins=breakpoints)
+    ref_pct = (ref_counts + 1e-6) / (len(ref_arr) + 1e-6 * bins)
+    cur_pct = (cur_counts + 1e-6) / (len(cur_arr) + 1e-6 * bins)
+    psi = float(np.sum((cur_pct - ref_pct) * np.log(cur_pct / ref_pct + 1e-9)))
+    return round(psi, 6)
+
+
+def compute_drift(
+    reference: list[float],
+    current: list[float],
+) -> dict[str, object]:
+    """Run KS-test to detect distributional drift.
+
+    Args:
+        reference: Baseline sample (e.g., training predictions).
+        current: Current sample (e.g., recent production predictions).
+
+    Returns:
+        Dictionary with ``ks_statistic``, ``p_value``, and ``is_drifted`` keys.
+    """
+    if len(reference) < 2 or len(current) < 2:
+        return {"ks_statistic": 0.0, "p_value": 1.0, "is_drifted": False}
+    stat, pval = stats.ks_2samp(reference, current)
+    psi = compute_psi(reference, current)
+    is_drifted = bool(pval < _KS_DRIFT_THRESHOLD or psi > _PSI_DRIFT_THRESHOLD)
+    logger.debug("KS=%.4f p=%.4f PSI=%.4f drifted=%s", stat, pval, psi, is_drifted)
     return {
-        "ks_statistic": round(float(stat), 4),
-        "p_value": round(float(p), 4),
-        "drift_detected": bool(p < 0.05),
+        "ks_statistic": round(float(stat), 6),
+        "p_value": round(float(pval), 6),
+        "psi": psi,
+        "is_drifted": is_drifted,
     }
 
 
 def compute_feature_drift(
-    reference_matrix: np.ndarray,
-    current_matrix: np.ndarray,
-) -> dict[str, object]:
-    """Compute per-feature KS drift across all 15 features.
+    reference: dict[str, list[float]],
+    current: dict[str, list[float]],
+) -> dict[str, dict[str, object]]:
+    """Compute per-feature drift between reference and current windows.
 
     Args:
-        reference_matrix: Reference feature matrix of shape (n_ref, n_features).
-        current_matrix: Current feature matrix of shape (n_cur, n_features).
+        reference: Mapping of feature name -> reference values.
+        current: Mapping of feature name -> current values.
 
     Returns:
-        Dict with feature_results, drifted_features list, drift_detected bool,
-        and drift_rate (fraction of features showing drift).
+        Mapping of feature name -> drift result dict.
     """
     results: dict[str, dict[str, object]] = {}
-    n_features: int = min(reference_matrix.shape[1], current_matrix.shape[1], len(FEATURE_NAMES))
-    for i in range(n_features):
-        fname: str = FEATURE_NAMES[i]
-        results[fname] = compute_drift(
-            reference_matrix[:, i].tolist(),
-            current_matrix[:, i].tolist(),
-        )
-    drifted: list[str] = [k for k, v in results.items() if v.get("drift_detected")]
-    return {
-        "feature_results": results,
-        "drifted_features": drifted,
-        "drift_detected": len(drifted) > 0,
-        "drift_rate": round(len(drifted) / max(n_features, 1), 3),
-    }
+    for feature, ref_vals in reference.items():
+        cur_vals = current.get(feature, [])
+        results[feature] = compute_drift(ref_vals, cur_vals)
+    return results
 
 
-def save_reference_stats(X: np.ndarray) -> None:
-    """Persist feature distribution statistics as JSON for later drift comparison.
+def prediction_health(predictions: list[float]) -> dict[str, Any]:
+    """Summarise basic health statistics of recent predictions.
 
     Args:
-        X: Reference feature matrix of shape (n_samples, n_features).
-    """
-    stats: dict[str, object] = {
-        "mean": X.mean(axis=0).tolist(),
-        "std": X.std(axis=0).tolist(),
-        "min": X.min(axis=0).tolist(),
-        "max": X.max(axis=0).tolist(),
-        "n_samples": X.shape[0],
-        "feature_names": FEATURE_NAMES,
-    }
-    with open(REFERENCE_STATS_PATH, "w") as f:
-        json.dump(stats, f, indent=2)
-    logger.info("Reference stats saved: n_samples=%d", X.shape[0])
-
-
-def load_reference_stats() -> dict[str, object]:
-    """Load persisted reference stats from disk.
+        predictions: List of predicted prices.
 
     Returns:
-        Stats dict, or empty dict if no reference stats file exists.
-    """
-    if os.path.exists(REFERENCE_STATS_PATH):
-        with open(REFERENCE_STATS_PATH) as f:
-            return json.load(f)
-    return {}
-
-
-def prediction_health_check(predictions: list[float]) -> dict[str, object]:
-    """Summarize recent prediction distribution for health monitoring.
-
-    Args:
-        predictions: List of recent demand prediction values.
-
-    Returns:
-        Dict with count, mean, std, min, max, negative_pct, zero_pct,
-        or {"status": "no_data"} if the list is empty.
+        Dictionary with count, mean, std, min, max, and negative_count.
     """
     if not predictions:
-        return {"status": "no_data"}
-    arr: np.ndarray = np.array(predictions)
+        return {"count": 0, "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "negative_count": 0}
+    arr = np.array(predictions, dtype=float)
     return {
-        "count": len(predictions),
-        "mean": round(float(arr.mean()), 3),
-        "std": round(float(arr.std()), 3),
-        "min": round(float(arr.min()), 3),
-        "max": round(float(arr.max()), 3),
-        "negative_pct": round(float((arr < 0).mean()) * 100, 2),
-        "zero_pct": round(float((arr == 0).mean()) * 100, 2),
+        "count": len(arr),
+        "mean": round(float(arr.mean()), 4),
+        "std": round(float(arr.std()), 4),
+        "min": round(float(arr.min()), 4),
+        "max": round(float(arr.max()), 4),
+        "negative_count": int((arr < 0).sum()),
     }
+
+
+def check_alerts(drift_result: dict[str, object]) -> list[str]:
+    """Check drift result for alert conditions.
+
+    Args:
+        drift_result: Output from :func:`compute_drift`.
+
+    Returns:
+        List of human-readable alert strings (empty if healthy).
+    """
+    alerts: list[str] = []
+    ks = float(drift_result.get("ks_statistic", 0.0))
+    psi = float(drift_result.get("psi", 0.0))
+    if ks > 0.3:
+        alerts.append(f"CRITICAL: KS statistic {ks:.3f} exceeds 0.3 — severe drift detected")
+    elif ks > _KS_DRIFT_THRESHOLD:
+        alerts.append(f"WARNING: KS statistic {ks:.3f} exceeds threshold {_KS_DRIFT_THRESHOLD}")
+    if psi > 0.25:
+        alerts.append(f"CRITICAL: PSI {psi:.3f} exceeds 0.25 — major distribution shift")
+    elif psi > _PSI_DRIFT_THRESHOLD:
+        alerts.append(f"WARNING: PSI {psi:.3f} exceeds threshold {_PSI_DRIFT_THRESHOLD}")
+    return alerts
