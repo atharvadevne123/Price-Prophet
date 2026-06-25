@@ -1,160 +1,135 @@
-"""FAISS-powered product similarity search with cosine fallback."""
+"""FAISS-based semantic product retrieval for Price-Prophet."""
 from __future__ import annotations
 
 import logging
 import os
-import pickle
+from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
 
-FAISS_INDEX_PATH: str = os.getenv("FAISS_INDEX_PATH", "faiss_index.pkl")
-
-try:
-    import faiss
-    HAS_FAISS: bool = True
-except ImportError:
-    HAS_FAISS = False
-    logger.warning("faiss not installed — falling back to cosine similarity")
+EMBEDDING_DIM: int = 32
+_index_cache: dict[str, "ProductIndex"] = {}
 
 
 class ProductIndex:
-    """L2-normalised cosine-similarity product index backed by FAISS or numpy.
+    """FAISS cosine-similarity index over synthetic product embeddings.
 
-    Attributes:
-        n_features: Dimensionality of the feature vectors.
-        metadata: List of metadata dicts for each indexed product.
+    Args:
+        dim: Embedding dimension (default 32).
     """
 
-    def __init__(self, n_features: int = 15) -> None:
-        self.n_features: int = n_features
-        self.index = None
-        self.metadata: list[dict] = []
-        self._vectors: np.ndarray | None = None
+    def __init__(self, dim: int = EMBEDDING_DIM) -> None:
+        import faiss
+        self.dim = dim
+        self._index = faiss.IndexFlatIP(dim)
+        self._metadata: list[dict[str, Any]] = []
 
-    def build(self, vectors: np.ndarray, metadata: list[dict]) -> None:
-        """Index a set of product vectors and their associated metadata.
+    @property
+    def size(self) -> int:
+        """Number of vectors currently indexed."""
+        return self._index.ntotal
+
+    def add(self, metadata: list[dict[str, Any]], vectors: np.ndarray) -> None:
+        """Add items to the index.
 
         Args:
-            vectors: Feature matrix of shape (n_products, n_features).
-            metadata: List of dicts with product_id, category, base_price, avg_demand.
+            metadata: List of dicts (one per vector) with product info.
+            vectors: Float32 ndarray of shape (n, dim), L2-normalised.
         """
-        self.metadata = metadata
-        normed: np.ndarray = self._normalize(vectors)
-        if HAS_FAISS:
-            self.index = faiss.IndexFlatIP(self.n_features)
-            self.index.add(normed.astype(np.float32))
-        else:
-            self._vectors = normed
-        logger.info("Product index built with %d items", len(metadata))
+        self._index.add(vectors)
+        self._metadata.extend(metadata)
 
-    def search(self, query: np.ndarray, k: int = 5) -> list[dict]:
-        """Return the top-k most similar products to a query vector.
+    def search(self, query: str, k: int = 5) -> list[dict[str, Any]]:
+        """Return up to k products similar to the query string.
 
         Args:
-            query: Feature vector of shape (n_features,).
-            k: Number of nearest neighbours to return.
+            query: Query string used to derive a pseudo-embedding via hashing.
+            k: Maximum number of results to return.
 
         Returns:
-            List of metadata dicts enriched with a similarity score.
+            List of metadata dicts for the nearest neighbours.
         """
-        if not self.metadata:
+        if self.size == 0:
             return []
-        normed_q: np.ndarray = self._normalize(query.reshape(1, -1)).astype(np.float32)
-        if HAS_FAISS and self.index is not None:
-            scores, indices = self.index.search(normed_q, min(k, len(self.metadata)))
-            results: list[dict] = []
-            for score, idx in zip(scores[0], indices[0]):
-                if idx >= 0:
-                    item = dict(self.metadata[idx])
-                    item["similarity"] = round(float(score), 4)
-                    results.append(item)
-            return results
-        elif self._vectors is not None:
-            sims: np.ndarray = (self._vectors @ normed_q.T).flatten()
-            top_k: np.ndarray = np.argsort(sims)[::-1][:k]
-            results = []
-            for idx in top_k:
-                item = dict(self.metadata[idx])
-                item["similarity"] = round(float(sims[idx]), 4)
-                results.append(item)
-            return results
-        return []
+        vec = _text_to_vector(query, self.dim)
+        actual_k = min(k, self.size)
+        _, indices = self._index.search(vec.reshape(1, -1), actual_k)
+        results: list[dict[str, Any]] = []
+        for idx in indices[0]:
+            if 0 <= idx < len(self._metadata):
+                results.append(self._metadata[idx])
+        return results
 
-    @staticmethod
-    def _normalize(v: np.ndarray) -> np.ndarray:
-        """L2-normalise each row of a 2-D matrix.
+    def batch_search(
+        self, queries: list[str], k: int = 5
+    ) -> list[list[dict[str, Any]]]:
+        """Return similar products for a batch of query strings.
 
         Args:
-            v: Input matrix of shape (n, d).
+            queries: List of query strings.
+            k: Maximum number of results per query.
 
         Returns:
-            Row-normalised matrix with unit L2 norm per row.
+            List of result lists, one per input query.
         """
-        norms: np.ndarray = np.linalg.norm(v, axis=1, keepdims=True)
-        norms = np.where(norms == 0, 1, norms)
-        return v / norms
-
-    def save(self, path: str = FAISS_INDEX_PATH) -> None:
-        """Pickle the index metadata and vectors to disk.
-
-        Args:
-            path: File path for the pickled index.
-        """
-        with open(path, "wb") as f:
-            pickle.dump({"metadata": self.metadata, "vectors": self._vectors, "n_features": self.n_features}, f)
-
-    def load(self, path: str = FAISS_INDEX_PATH) -> bool:
-        """Load index from disk.
-
-        Args:
-            path: File path to the pickled index.
-
-        Returns:
-            True if loaded successfully, False if the file does not exist.
-        """
-        if not os.path.exists(path):
-            return False
-        with open(path, "rb") as f:
-            data = pickle.load(f)
-        self.metadata = data["metadata"]
-        self._vectors = data.get("vectors")
-        self.n_features = data["n_features"]
-        return True
+        return [self.search(q, k=k) for q in queries]
 
 
-_product_index: ProductIndex | None = None
+def _text_to_vector(text: str, dim: int) -> np.ndarray:
+    """Hash a string into a unit-norm float32 vector.
+
+    Args:
+        text: Input string.
+        dim: Output vector dimension.
+
+    Returns:
+        L2-normalised float32 ndarray of shape (dim,).
+    """
+    rng = np.random.default_rng(abs(hash(text)) % (2**32))
+    vec = rng.standard_normal(dim).astype(np.float32)
+    norm = np.linalg.norm(vec)
+    if norm > 0:
+        vec /= norm
+    return vec
+
+
+def _seed_index(index: ProductIndex) -> None:
+    """Populate the index with synthetic product vectors.
+
+    Args:
+        index: Empty :class:`ProductIndex` to seed.
+    """
+    from app.features import CATEGORY_MAP
+
+    categories = list(CATEGORY_MAP.keys())
+    price_ranges = {
+        "Electronics": (50, 2000), "Clothing": (10, 500), "Food": (1, 100),
+        "Books": (5, 80), "Toys": (5, 200), "Sports": (15, 800),
+        "Home": (10, 1000), "Beauty": (5, 300), "Automotive": (20, 5000),
+        "Garden": (5, 500),
+    }
+    metadata: list[dict[str, Any]] = []
+    vectors: list[np.ndarray] = []
+    for cat in categories:
+        lo, hi = price_ranges[cat]
+        for i in range(20):
+            price = round(lo + (hi - lo) * (i / 19), 2)
+            metadata.append({"category": cat, "price": price, "rank": i})
+            vectors.append(_text_to_vector(f"{cat}_{i}", index.dim))
+    index.add(metadata, np.array(vectors, dtype=np.float32))
+    logger.debug("Seeded index with %d vectors across %d categories", index.size, len(categories))
 
 
 def get_index() -> ProductIndex:
-    """Return the global singleton ProductIndex, seeding it if needed.
+    """Return or create the module-level singleton ProductIndex.
 
     Returns:
-        Initialised ProductIndex ready for search.
+        Seeded :class:`ProductIndex` instance.
     """
-    global _product_index
-    if _product_index is None:
-        _product_index = ProductIndex()
-        if not _product_index.load():
-            _seed_index()
-    return _product_index
-
-
-def _seed_index() -> None:
-    """Populate the product index with synthetic training data."""
-    from app.features import CATEGORY_MAP, generate_synthetic_training_data
-    X, y = generate_synthetic_training_data(n_samples=500)
-    categories: list[str] = list(CATEGORY_MAP.keys())
-    np.random.seed(99)
-    meta: list[dict] = [
-        {
-            "product_id": f"PROD-{i:04d}",
-            "category": categories[int(X[i, 7]) % len(categories)],
-            "base_price": round(float(X[i, 0]), 2),
-            "avg_demand": round(float(y[i]), 2),
-        }
-        for i in range(len(X))
-    ]
-    _product_index.build(X, meta)
-    logger.info("Product index seeded with %d synthetic products", len(meta))
+    if "default" not in _index_cache:
+        idx = ProductIndex(dim=EMBEDDING_DIM)
+        _seed_index(idx)
+        _index_cache["default"] = idx
+    return _index_cache["default"]
