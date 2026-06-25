@@ -1,4 +1,4 @@
-"""Tests for FAISS-based product retrieval."""
+"""Tests for FAISS-based product retrieval including batch search."""
 from __future__ import annotations
 
 import pytest
@@ -7,9 +7,10 @@ import pytest
 @pytest.fixture(autouse=True)
 def reset_index():
     """Reset the singleton ProductIndex before each test."""
-    from app.retrieval import _index_cache  # noqa: PLC0415
-    _index_cache.clear() if hasattr(_index_cache, "clear") else None
+    from app import retrieval
+    retrieval._index_cache.clear()
     yield
+    retrieval._index_cache.clear()
 
 
 def test_get_index_returns_instance():
@@ -46,6 +47,7 @@ def test_search_result_has_required_keys():
     results = idx.search("Electronics", k=1)
     if results:
         assert "category" in results[0]
+        assert "price" in results[0]
 
 
 def test_search_unknown_category_returns_list():
@@ -68,7 +70,7 @@ def test_add_increases_size():
     before = idx.size
     vec = np.random.rand(idx.dim).astype("float32")
     vec /= np.linalg.norm(vec) + 1e-9
-    idx.add([{"category": "Test", "price": 1.0}], np.array([vec]))
+    idx.add([{"category": "Test", "price": 1.0, "rank": 0}], np.array([vec]))
     assert idx.size >= before
 
 
@@ -78,3 +80,27 @@ def test_search_known_categories(category):
     idx = get_index()
     results = idx.search(category, k=3)
     assert isinstance(results, list)
+
+
+def test_batch_search_returns_list_of_lists():
+    from app.retrieval import get_index
+    idx = get_index()
+    results = idx.batch_search(["Electronics", "Books", "Food"], k=3)
+    assert isinstance(results, list)
+    assert len(results) == 3
+    assert all(isinstance(r, list) for r in results)
+
+
+def test_batch_search_empty_query_list():
+    from app.retrieval import get_index
+    idx = get_index()
+    results = idx.batch_search([], k=3)
+    assert results == []
+
+
+def test_batch_search_single_query():
+    from app.retrieval import get_index
+    idx = get_index()
+    results = idx.batch_search(["Electronics"], k=2)
+    assert len(results) == 1
+    assert len(results[0]) <= 2
