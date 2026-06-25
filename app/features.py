@@ -1,161 +1,133 @@
-"""Feature engineering pipeline for price optimization model."""
+"""Feature engineering for Price-Prophet ML pipeline."""
 from __future__ import annotations
 
+import random
 from typing import Any
 
-import numpy as np
 import pandas as pd
 
-FEATURE_NAMES: list[str] = [
-    "base_price",
-    "competitor_price",
-    "price_ratio",
-    "day_of_week",
-    "month",
-    "is_weekend",
-    "is_holiday_season",
-    "category_encoded",
-    "stock_level",
-    "days_since_last_promotion",
-    "historical_demand_7d",
-    "historical_demand_30d",
-    "demand_trend",
-    "price_elasticity_estimate",
-    "margin_ratio",
-]
-
 CATEGORY_MAP: dict[str, int] = {
-    "electronics": 0,
-    "clothing": 1,
-    "food": 2,
-    "home": 3,
-    "sports": 4,
-    "beauty": 5,
-    "toys": 6,
-    "books": 7,
-    "other": 8,
+    "Electronics": 0,
+    "Clothing": 1,
+    "Food": 2,
+    "Books": 3,
+    "Toys": 4,
+    "Sports": 5,
+    "Home": 6,
+    "Beauty": 7,
+    "Automotive": 8,
+    "Garden": 9,
 }
 
 HOLIDAY_MONTHS: frozenset[int] = frozenset({11, 12, 1})
 
 
-def engineer_features(data: dict[str, Any]) -> np.ndarray:
-    """Transform a raw product pricing dict into a fixed-length feature vector.
+def engineer_features(data: dict[str, Any]) -> pd.DataFrame:
+    """Transform a raw request dict into a model-ready feature DataFrame.
 
     Args:
-        data: Dict with keys base_price, competitor_price, category, stock_level,
-              historical_demand_7d, historical_demand_30d, days_since_last_promotion,
-              cost, date (optional).
+        data: Raw request fields (category, stock_level, competitor_price, etc.).
 
     Returns:
-        Float32 numpy array of shape (n_features,) = (15,).
+        Single-row DataFrame with all engineered features.
     """
-    base_price: float = float(data.get("base_price") or 100.0)
-    competitor_price: float = float(data.get("competitor_price") or base_price * 1.05)
-    price_ratio: float = base_price / max(competitor_price, 0.01)
+    category: str = str(data.get("category", "Electronics"))
+    stock_level: float = float(data.get("stock_level", 50))
+    competitor_price: float = float(data.get("competitor_price", 100.0))
+    demand_trend: float = float(data.get("demand_trend", 1.0))
+    margin_ratio: float = float(data.get("margin_ratio", 0.3))
 
-    date_str: str = data.get("date", pd.Timestamp.now().strftime("%Y-%m-%d"))
-    dt: pd.Timestamp = pd.Timestamp(date_str)
-    day_of_week: int = dt.dayofweek
-    month: int = dt.month
-    is_weekend: int = int(day_of_week >= 5)
-    is_holiday_season: int = int(month in HOLIDAY_MONTHS)
+    cat_code: int = CATEGORY_MAP.get(category, 0)
+    month: int = pd.Timestamp.now().month
+    is_holiday: int = int(month in HOLIDAY_MONTHS)
+    price_per_unit: float = competitor_price / max(stock_level, 1)
+    demand_price_interaction: float = demand_trend * competitor_price
+    stock_demand_ratio: float = stock_level / max(demand_trend, 0.01)
+    log_price: float = pd.np.log1p(competitor_price) if hasattr(pd, "np") else __import__("math").log1p(competitor_price)
+    margin_price: float = competitor_price * margin_ratio
+    scarcity_score: float = max(0.0, 1.0 - stock_level / 1000.0)
+    value_index: float = demand_trend * margin_ratio * (1.0 + is_holiday * 0.2)
 
-    category: str = data.get("category", "other").lower()
-    category_encoded: int = CATEGORY_MAP.get(category, 8)
-
-    stock_level: float = float(data.get("stock_level") or 100)
-    days_since_promo: float = float(data.get("days_since_last_promotion") or 30)
-    hist_demand_7d: float = float(data.get("historical_demand_7d") or 50)
-    hist_demand_30d: float = float(data.get("historical_demand_30d") or 200)
-
-    demand_trend: float = (hist_demand_7d * 4 - hist_demand_30d) / max(hist_demand_30d, 1)
-
-    cost: float = float(data.get("cost") or base_price * 0.6)
-    margin_ratio: float = (base_price - cost) / max(base_price, 0.01)
-
-    price_elasticity_estimate: float = -1.5 * (1 + 0.5 * (price_ratio - 1))
-
-    return np.array([
-        base_price,
-        competitor_price,
-        price_ratio,
-        day_of_week,
-        month,
-        is_weekend,
-        is_holiday_season,
-        category_encoded,
-        stock_level,
-        days_since_promo,
-        hist_demand_7d,
-        hist_demand_30d,
-        demand_trend,
-        price_elasticity_estimate,
-        margin_ratio,
-    ], dtype=np.float32)
+    return pd.DataFrame([{
+        "category_code": cat_code,
+        "stock_level": stock_level,
+        "competitor_price": competitor_price,
+        "demand_trend": demand_trend,
+        "margin_ratio": margin_ratio,
+        "is_holiday": is_holiday,
+        "price_per_unit": price_per_unit,
+        "demand_price_interaction": demand_price_interaction,
+        "stock_demand_ratio": stock_demand_ratio,
+        "log_price": log_price,
+        "margin_price": margin_price,
+        "scarcity_score": scarcity_score,
+        "value_index": value_index,
+    }])
 
 
-def engineer_batch_features(records: list[dict[str, Any]]) -> np.ndarray:
-    """Convert a list of product dicts to a 2-D feature matrix.
+def engineer_batch_features(items: list[dict[str, Any]]) -> pd.DataFrame:
+    """Apply engineer_features to a list of request dicts.
 
     Args:
-        records: List of product pricing dicts.
+        items: List of raw request dicts.
 
     Returns:
-        Float32 numpy array of shape (n_records, n_features).
+        Multi-row DataFrame with all engineered features.
     """
-    return np.vstack([engineer_features(r) for r in records])
+    return pd.concat([engineer_features(item) for item in items], ignore_index=True)
 
 
-def generate_synthetic_training_data(n_samples: int = 2000) -> tuple[np.ndarray, np.ndarray]:
-    """Generate synthetic product pricing data for model training and testing.
+def generate_synthetic_training_data(n: int = 5000) -> pd.DataFrame:
+    """Generate synthetic training data with realistic price distributions.
 
     Args:
-        n_samples: Number of synthetic records to generate.
+        n: Number of rows to generate.
 
     Returns:
-        Tuple of (X, y) where X has shape (n_samples, 15) and y has shape (n_samples,).
+        DataFrame with features and a ``price`` target column.
     """
-    np.random.seed(42)
-    records: list[dict[str, Any]] = []
-    labels: list[float] = []
-
+    import math
+    rows: list[dict[str, Any]] = []
     categories: list[str] = list(CATEGORY_MAP.keys())
-
-    for _ in range(n_samples):
-        base_price: float = float(np.random.uniform(10, 500))
-        competitor_price: float = base_price * float(np.random.uniform(0.8, 1.3))
-        cost: float = base_price * float(np.random.uniform(0.4, 0.7))
-        stock: int = int(np.random.randint(0, 500))
-        hist_7d: float = float(np.random.uniform(10, 200))
-        hist_30d: float = hist_7d * float(np.random.uniform(3.5, 5.0))
-        days_promo: int = int(np.random.randint(0, 90))
-        category: str = str(np.random.choice(categories))
-
-        dt: pd.Timestamp = pd.Timestamp("2024-01-01") + pd.Timedelta(days=int(np.random.randint(0, 365)))
-
-        record: dict[str, Any] = {
-            "base_price": base_price,
-            "competitor_price": competitor_price,
-            "cost": cost,
-            "stock_level": stock,
-            "historical_demand_7d": hist_7d,
-            "historical_demand_30d": hist_30d,
-            "days_since_last_promotion": days_promo,
-            "category": category,
-            "date": dt.strftime("%Y-%m-%d"),
-        }
-        records.append(record)
-
-        price_ratio: float = base_price / max(competitor_price, 0.01)
-        demand: float = (
-            hist_7d * 0.4
-            + (1 / price_ratio) * 20
-            + (1 if dt.month in HOLIDAY_MONTHS else 0) * 15
-            + float(np.random.normal(0, 5))
+    for _ in range(n):
+        category = random.choice(categories)
+        stock_level = random.randint(0, 500)
+        competitor_price = round(random.uniform(5.0, 2000.0), 2)
+        demand_trend = round(random.uniform(0.2, 3.0), 2)
+        margin_ratio = round(random.uniform(0.05, 0.6), 2)
+        month = random.randint(1, 12)
+        is_holiday = int(month in HOLIDAY_MONTHS)
+        noise = random.gauss(0, competitor_price * 0.05)
+        price = (
+            competitor_price * (0.8 + demand_trend * 0.15)
+            * (1 + margin_ratio * 0.3)
+            * (1 + is_holiday * 0.1)
+            * (1 - stock_level / 5000)
+            + noise
         )
-        labels.append(max(demand, 0.0))
-
-    X: np.ndarray = engineer_batch_features(records)
-    y: np.ndarray = np.array(labels, dtype=np.float32)
-    return X, y
+        price = max(1.0, round(price, 2))
+        cat_code = CATEGORY_MAP[category]
+        price_per_unit = competitor_price / max(stock_level, 1)
+        demand_price_interaction = demand_trend * competitor_price
+        stock_demand_ratio = stock_level / max(demand_trend, 0.01)
+        log_price = math.log1p(competitor_price)
+        margin_price = competitor_price * margin_ratio
+        scarcity_score = max(0.0, 1.0 - stock_level / 1000.0)
+        value_index = demand_trend * margin_ratio * (1.0 + is_holiday * 0.2)
+        rows.append({
+            "category_code": cat_code,
+            "stock_level": float(stock_level),
+            "competitor_price": competitor_price,
+            "demand_trend": demand_trend,
+            "margin_ratio": margin_ratio,
+            "is_holiday": is_holiday,
+            "price_per_unit": price_per_unit,
+            "demand_price_interaction": demand_price_interaction,
+            "stock_demand_ratio": stock_demand_ratio,
+            "log_price": log_price,
+            "margin_price": margin_price,
+            "scarcity_score": scarcity_score,
+            "value_index": value_index,
+            "price": price,
+        })
+    return pd.DataFrame(rows)
