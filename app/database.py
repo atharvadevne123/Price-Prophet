@@ -121,8 +121,13 @@ def init_db() -> None:
 
     Called once at application startup.
     """
-    logger.info("Initialising database at %s", DATABASE_URL)
-    Base.metadata.create_all(bind=engine)
+    url = os.getenv("DATABASE_URL", DATABASE_URL)
+    if url != DATABASE_URL:
+        eng = create_engine(url, connect_args={"check_same_thread": False} if "sqlite" in url else {})
+    else:
+        eng = engine
+    logger.info("Initialising database at %s", url)
+    Base.metadata.create_all(bind=eng)
 
 
 def get_db() -> Generator[Session, None, None]:
