@@ -101,8 +101,9 @@ def train_model(
     metrics: dict[str, object] = {"mae": round(mae, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}
     if cv_mae is not None:
         metrics["cv_mae_mean"] = round(cv_mae, 4)
-    Path(METRICS_PATH).parent.mkdir(parents=True, exist_ok=True)
-    with open(METRICS_PATH, "w") as f:
+    metrics_path = os.getenv("METRICS_PATH", METRICS_PATH)
+    Path(metrics_path).parent.mkdir(parents=True, exist_ok=True)
+    with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
     logger.info("Trained: MAE=%.4f RMSE=%.4f R2=%.4f", mae, rmse, r2)
@@ -177,7 +178,8 @@ def get_feature_importance(model_path: str = MODEL_PATH) -> dict[str, float]:
     feature_cols = bundle["feature_cols"]
     voting: VotingRegressor = pipeline.named_steps["model"]
     rf_est = None
-    for name, est in voting.estimators_:
+    est_names = [n for n, _ in voting.estimators]
+    for name, est in zip(est_names, voting.estimators_):
         if name == "rf":
             rf_est = est
             break
