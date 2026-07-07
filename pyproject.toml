@@ -4,7 +4,7 @@ build-backend = "setuptools.backends.legacy:build"
 
 [project]
 name = "price-prophet"
-version = "1.0.0"
+version = "1.0.1"
 description = "ML-powered dynamic pricing engine with ensemble forecasting"
 authors = [{name = "Atharva Devne", email = "devneatharva@gmail.com"}]
 license = {text = "MIT"}
@@ -57,6 +57,7 @@ ignore = ["E501", "B008"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["app"]
@@ -64,7 +65,7 @@ omit = ["tests/*", "scripts/*", "dags/*"]
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "def __repr__", "raise NotImplementedError"]
-fail_under = 40
+fail_under = 60
 
 [tool.mypy]
 python_version = "3.11"

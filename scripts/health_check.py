@@ -3,9 +3,12 @@
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import sys
 import urllib.request
-import json
+
+logger = logging.getLogger(__name__)
 
 
 def check_health(base_url: str) -> int:
@@ -18,23 +21,23 @@ def check_health(base_url: str) -> int:
         Exit code: 0 for healthy, 1 for unhealthy.
     """
     try:
-        url = f"{base_url.rstrip(/)}/health"
+        url = f"{base_url.rstrip('/')}/health"
         req = urllib.request.Request(url, headers={"Accept": "application/json"})
         with urllib.request.urlopen(req, timeout=10) as r:
             data = json.load(r)
         if data.get("status") == "ok":
-            print(f"OK: API is healthy (model_loaded={data.get(model_loaded)})")
+            logger.info("OK: API is healthy (model_trained=%s)", data.get("model_trained"))
             return 0
-        else:
-            print(f"WARN: Unexpected response: {data}")
-            return 1
+        logger.warning("Unexpected response: %s", data)
+        return 1
     except Exception as exc:
-        print(f"ERROR: Health check failed: {exc}", file=sys.stderr)
+        logger.error("Health check failed: %s", exc)
         return 1
 
 
 def main() -> None:
     """Run the API health check."""
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Check Price-Prophet API health")
     parser.add_argument("--url", default="http://localhost:8000", help="API base URL")
     args = parser.parse_args()

@@ -96,3 +96,76 @@ def test_init_db_runs(tmp_path):
     from app.database import init_db
     init_db()
     assert (tmp_path / "test.db").exists()
+
+
+def test_drift_report_model_insert(session):
+    from app.database import DriftReport
+    report = DriftReport(
+        ks_statistic=0.15,
+        p_value=0.03,
+        psi=0.12,
+        is_drifted=True,
+        n_samples=100,
+    )
+    session.add(report)
+    session.commit()
+    retrieved = session.query(DriftReport).filter_by(is_drifted=True).first()
+    assert retrieved is not None
+    assert retrieved.ks_statistic == pytest.approx(0.15)
+
+
+def test_drift_report_not_drifted(session):
+    from app.database import DriftReport
+    report = DriftReport(ks_statistic=0.01, p_value=0.8, psi=0.02, is_drifted=False, n_samples=50)
+    session.add(report)
+    session.commit()
+    assert session.query(DriftReport).filter_by(is_drifted=False).count() >= 1
+
+
+def test_get_db_yields_session():
+    from app.database import get_db
+    gen = get_db()
+    db = next(gen)
+    assert db is not None
+    try:
+        next(gen)
+    except StopIteration:
+        pass
+
+
+def test_count_predictions_empty(session):
+    from app.database import count_predictions
+    assert count_predictions(session) == 0
+
+
+def test_count_predictions_after_insert(session):
+    from app.database import Prediction, count_predictions
+    for i in range(3):
+        session.add(Prediction(category="Sports", input_price=float(i * 10), predicted_price=float(i * 9)))
+    session.commit()
+    assert count_predictions(session) == 3
+
+
+def test_get_predictions_by_category_empty(session):
+    from app.database import get_predictions_by_category
+    results = get_predictions_by_category(session, "Garden")
+    assert results == []
+
+
+def test_get_predictions_by_category_filters(session):
+    from app.database import Prediction, get_predictions_by_category
+    session.add(Prediction(category="Home", input_price=50.0, predicted_price=48.0))
+    session.add(Prediction(category="Beauty", input_price=30.0, predicted_price=28.0))
+    session.commit()
+    home = get_predictions_by_category(session, "Home")
+    assert len(home) == 1
+    assert home[0].category == "Home"
+
+
+@pytest.mark.parametrize("category", ["Electronics", "Toys", "Automotive"])
+def test_get_predictions_by_category_parametrize(session, category):
+    from app.database import Prediction, get_predictions_by_category
+    session.add(Prediction(category=category, input_price=100.0, predicted_price=95.0))
+    session.commit()
+    results = get_predictions_by_category(session, category)
+    assert len(results) >= 1

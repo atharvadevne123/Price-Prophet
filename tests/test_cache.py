@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import time
+
 import pytest
 
 
@@ -87,3 +88,43 @@ def test_get_cache_singleton():
     c1 = get_cache()
     c2 = get_cache()
     assert c1 is c2
+
+
+@pytest.mark.parametrize("value", [0, "", [], {}, None, 3.14, "hello"])
+def test_set_and_get_various_types(value):
+    from app.cache import TTLCache
+    c = TTLCache(default_ttl=10.0)
+    c.set("k", value)
+    assert c.get("k") == value
+
+
+def test_overwrite_existing_key(cache):
+    cache.set("k", "first")
+    cache.set("k", "second")
+    assert cache.get("k") == "second"
+
+
+def test_hit_rate_mixed(cache):
+    cache.set("k", "v")
+    cache.get("k")
+    cache.get("missing")
+    assert cache.hit_rate == pytest.approx(0.5)
+
+
+def test_stats_after_operations(cache):
+    cache.set("a", 1)
+    cache.get("a")
+    cache.get("b")
+    stats = cache.stats()
+    assert stats["hits"] == 1
+    assert stats["misses"] == 1
+    assert stats["size"] == 1
+
+
+def test_evict_expired_does_not_remove_valid(cache):
+    cache.set("valid", "yes", ttl=100.0)
+    cache.set("expired", "no", ttl=0.01)
+    time.sleep(0.05)
+    removed = cache.evict_expired()
+    assert removed == 1
+    assert cache.get("valid") == "yes"

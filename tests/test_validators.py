@@ -93,3 +93,54 @@ def test_validate_request_full():
 def test_all_valid_categories(cat):
     from app.validators import validate_category
     assert validate_category(cat) == cat
+
+
+@pytest.mark.parametrize("price", [0.0, -1.0, 1_000_001.0])
+def test_validate_price_out_of_range(price):
+    from app.validators import validate_price
+    with pytest.raises(ValueError):
+        validate_price(price)
+
+
+@pytest.mark.parametrize("stock", [-1, 100_001])
+def test_validate_stock_out_of_range(stock):
+    from app.validators import validate_stock
+    with pytest.raises(ValueError):
+        validate_stock(stock)
+
+
+def test_validate_request_normalises_category_case():
+    from app.validators import validate_request
+    result = validate_request({"category": "electronics", "competitor_price": 50.0})
+    assert result["category"] == "Electronics"
+
+
+def test_validate_request_passes_through_unknown_fields():
+    from app.validators import validate_request
+    result = validate_request({"category": "Books", "competitor_price": 20.0, "extra_field": "x"})
+    assert result.get("extra_field") == "x"
+
+
+@pytest.mark.parametrize("trend", [0.1, 0.5, 1.0, 5.0, 10.0])
+def test_validate_demand_trend_boundary_values(trend):
+    from app.validators import validate_demand_trend
+    assert validate_demand_trend(trend) == trend
+
+
+@pytest.mark.parametrize("ratio", [0.0, 0.1, 0.5, 1.0])
+def test_validate_margin_ratio_valid(ratio):
+    from app.validators import validate_margin_ratio
+    assert validate_margin_ratio(ratio) == ratio
+
+
+@pytest.mark.parametrize("ratio", [-0.01, 1.01, 2.0])
+def test_validate_margin_ratio_invalid(ratio):
+    from app.validators import validate_margin_ratio
+    with pytest.raises(ValueError):
+        validate_margin_ratio(ratio)
+
+
+def test_validate_request_validates_margin_ratio():
+    from app.validators import validate_request
+    with pytest.raises(ValueError):
+        validate_request({"category": "Books", "competitor_price": 20.0, "margin_ratio": 1.5})

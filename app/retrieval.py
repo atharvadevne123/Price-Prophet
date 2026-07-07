@@ -1,13 +1,15 @@
 """FAISS-based semantic product retrieval for Price-Prophet."""
 from __future__ import annotations
 
+import hashlib
 import logging
-import os
 from typing import Any
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+__all__ = ["ProductIndex", "get_index", "EMBEDDING_DIM"]
 
 EMBEDDING_DIM: int = 32
 _index_cache: dict[str, "ProductIndex"] = {}
@@ -69,11 +71,16 @@ class ProductIndex:
 
         Args:
             queries: List of query strings.
-            k: Maximum number of results per query.
+            k: Maximum number of results per query (1–50).
 
         Returns:
             List of result lists, one per input query.
+
+        Raises:
+            ValueError: If k is outside the valid range [1, 50].
         """
+        if k < 1 or k > 50:
+            raise ValueError(f"k must be between 1 and 50, got {k}")
         return [self.search(q, k=k) for q in queries]
 
 
@@ -87,7 +94,8 @@ def _text_to_vector(text: str, dim: int) -> np.ndarray:
     Returns:
         L2-normalised float32 ndarray of shape (dim,).
     """
-    rng = np.random.default_rng(abs(hash(text)) % (2**32))
+    seed = int(hashlib.md5(text.encode(), usedforsecurity=False).hexdigest()[:8], 16)
+    rng = np.random.default_rng(seed)
     vec = rng.standard_normal(dim).astype(np.float32)
     norm = np.linalg.norm(vec)
     if norm > 0:

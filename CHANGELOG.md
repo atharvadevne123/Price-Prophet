@@ -3,6 +3,27 @@
 All notable changes to Price-Prophet are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
+## [1.0.1] - 2026-07-07
+
+### Fixed
+- Removed deprecated `pd.np.log1p` usage in `engineer_features()` — now uses `math.log1p`
+- Replaced non-deterministic `hash()` seed in `_text_to_vector()` with `hashlib.md5` for stable embeddings
+- Fixed malformed JSON formatter `fmt` string in `logging_config.py` (missing quotes)
+- Fixed bare-name dict key bugs in `scripts/benchmark.py` and `scripts/health_check.py`
+- Rewrote `scripts/seed_db.py` to match current `predict()` / `train_model()` API signatures
+
+### Added
+- `/categories` endpoint listing valid product categories
+- `/health/detailed` endpoint with model and database status
+- `/predictions` endpoint with pagination (`limit` / `offset`)
+- `/cache-stats` endpoint exposing TTL cache hit/miss metrics
+- `/cache-clear` endpoint to flush the prediction cache
+- `validate_margin_ratio()` validator and integration into `validate_request()`
+- `X-Request-ID` correlation header in HTTP middleware
+- Cache stats included in `/metrics` response
+- `__all__` declarations in `app/cache.py`, `app/monitoring.py`, `app/retrieval.py`, `app/validators.py`
+- Structured logging and type annotations across all scripts
+
 ## [Unreleased]
 
 ### Added

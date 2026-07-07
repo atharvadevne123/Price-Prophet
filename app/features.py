@@ -1,10 +1,13 @@
 """Feature engineering for Price-Prophet ML pipeline."""
 from __future__ import annotations
 
+import math
 import random
 from typing import Any
 
 import pandas as pd
+
+__all__ = ["CATEGORY_MAP", "HOLIDAY_MONTHS", "engineer_features", "generate_synthetic_training_data"]
 
 CATEGORY_MAP: dict[str, int] = {
     "Electronics": 0,
@@ -43,7 +46,7 @@ def engineer_features(data: dict[str, Any]) -> pd.DataFrame:
     price_per_unit: float = competitor_price / max(stock_level, 1)
     demand_price_interaction: float = demand_trend * competitor_price
     stock_demand_ratio: float = stock_level / max(demand_trend, 0.01)
-    log_price: float = pd.np.log1p(competitor_price) if hasattr(pd, "np") else __import__("math").log1p(competitor_price)
+    log_price: float = math.log1p(competitor_price)
     margin_price: float = competitor_price * margin_ratio
     scarcity_score: float = max(0.0, 1.0 - stock_level / 1000.0)
     value_index: float = demand_trend * margin_ratio * (1.0 + is_holiday * 0.2)
@@ -86,7 +89,6 @@ def generate_synthetic_training_data(n: int = 5000) -> pd.DataFrame:
     Returns:
         DataFrame with features and a ``price`` target column.
     """
-    import math
     rows: list[dict[str, Any]] = []
     categories: list[str] = list(CATEGORY_MAP.keys())
     for _ in range(n):

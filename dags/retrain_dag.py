@@ -34,7 +34,8 @@ def check_drift(**context: Any) -> bool:
         True if retraining is needed, False otherwise.
     """
     from sqlalchemy import create_engine, text
-    from app.monitoring import compute_drift, compute_psi
+
+    from app.monitoring import compute_drift
 
     engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:

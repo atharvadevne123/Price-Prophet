@@ -19,7 +19,7 @@ def test_engineer_features_columns():
 
 
 def test_category_code_electronics():
-    from app.features import engineer_features, CATEGORY_MAP
+    from app.features import CATEGORY_MAP, engineer_features
     df = engineer_features({"category": "Electronics"})
     assert df["category_code"].iloc[0] == CATEGORY_MAP["Electronics"]
 
@@ -134,3 +134,34 @@ def test_engineer_batch_features():
     ]
     df = engineer_batch_features(items)
     assert len(df) == 2
+
+
+@pytest.mark.parametrize("price", [1.0, 10.0, 100.0, 1000.0, 9999.99])
+def test_log_price_monotonic(price):
+    """log_price increases with competitor_price."""
+    import math
+
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "competitor_price": price})
+    assert df["log_price"].iloc[0] == pytest.approx(math.log1p(price))
+
+
+@pytest.mark.parametrize("stock", [0, 1, 100, 500, 1000, 5000])
+def test_scarcity_score_range(stock):
+    from app.features import engineer_features
+    df = engineer_features({"category": "Electronics", "stock_level": stock})
+    score = df["scarcity_score"].iloc[0]
+    assert 0.0 <= score <= 1.0
+
+
+def test_engineer_features_unknown_category_falls_back():
+    from app.features import engineer_features
+    df = engineer_features({"category": "UnknownXYZ", "competitor_price": 50.0})
+    assert df["category_code"].iloc[0] == 0
+
+
+def test_generate_synthetic_data_all_columns_present():
+    from app.features import CATEGORY_MAP, generate_synthetic_training_data
+    df = generate_synthetic_training_data(50)
+    expected = set(CATEGORY_MAP.values())
+    assert set(df["category_code"].unique()).issubset(expected | {0})

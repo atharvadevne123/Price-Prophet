@@ -14,11 +14,14 @@ Price-Prophet is a production-ready FastAPI service that predicts optimal produc
 ## Features
 
 - **Ensemble Forecasting** — XGBoost + LightGBM + RandomForest VotingRegressor
-- **Semantic Retrieval** — FAISS cosine similarity product search  
-- **Drift Detection** — KS-test and PSI statistical drift monitoring
+- **Price Optimisation** — Grid search over a price range to find the optimal price
+- **Semantic Retrieval** — FAISS cosine similarity product search with batch query support
+- **Drift Detection** — KS-test and PSI statistical drift monitoring with percentile stats
 - **Auto Retraining** — Apache Airflow DAG triggered on drift or schedule
-- **REST API** — FastAPI with OpenAPI docs at `/docs`
-- **Observability** — Process-time header, health check, metrics endpoint
+- **REST API** — FastAPI with OpenAPI docs at `/docs`; 20+ endpoints
+- **Observability** — Process-time header, X-Request-ID correlation, detailed health, uptime, cache metrics
+- **Input Validation** — Category, price, stock, margin, and demand-trend validators
+- **Configurable CORS** — Set allowed origins via `CORS_ORIGINS` env variable
 
 ## Quick Start
 
@@ -113,6 +116,43 @@ Service health check.
 ### `GET /version`
 API version information.
 
+### `POST /optimize-price`
+Find the price in a range that maximises predicted value.
+
+**Request:**
+```json
+{"category": "Electronics", "stock_level": 50, "demand_trend": 1.2, "margin_ratio": 0.3, "price_min": 100.0, "price_max": 500.0, "n_steps": 20}
+```
+
+**Response:**
+```json
+{"optimal_price": 347.0, "predicted_value": 351.2}
+```
+
+### `GET /status`
+Service status with uptime in seconds.
+
+### `GET /model/info`
+Model metadata, training status, and current metrics.
+
+### `GET /categories`
+List all valid product categories.
+
+### `GET /health/detailed`
+Detailed health — model file and database status.
+
+### `GET /predictions`
+Paginated list of stored predictions with `has_next`/`has_prev` navigation metadata.
+
+### `GET /predictions/count`
+Total count of stored predictions.
+
+### `GET /cache-stats`
+Hit/miss/hit-rate statistics for the prediction cache.
+
+### `POST /cache-clear`
+Evict all entries from the in-memory cache.
+
 ### `GET /similar`
 Find semantically similar products by category.
 
@@ -122,6 +162,8 @@ Find semantically similar products by category.
 |---|---|---|
 | `DATABASE_URL` | `sqlite:///./prices.db` | Database connection string |
 | `MODEL_PATH` | `models/price_model.pkl` | Model pickle path |
+| `METRICS_PATH` | `models/metrics.json` | Metrics JSON path |
+| `CORS_ORIGINS` | `*` | Comma-separated allowed CORS origins |
 | `LOG_LEVEL` | `INFO` | Logging verbosity |
 | `PORT` | `8000` | HTTP server port |
 

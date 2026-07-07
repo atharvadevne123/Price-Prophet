@@ -3,6 +3,16 @@ from __future__ import annotations
 
 from typing import Any
 
+__all__ = [
+    "VALID_CATEGORIES",
+    "validate_category",
+    "validate_price",
+    "validate_stock",
+    "validate_demand_trend",
+    "validate_margin_ratio",
+    "validate_request",
+]
+
 
 VALID_CATEGORIES: frozenset[str] = frozenset(
     {
@@ -123,4 +133,23 @@ def validate_request(data: dict[str, Any]) -> dict[str, Any]:
         out["stock_level"] = validate_stock(int(out["stock_level"]))
     if "demand_trend" in out:
         out["demand_trend"] = validate_demand_trend(float(out["demand_trend"]))
+    if "margin_ratio" in out:
+        out["margin_ratio"] = validate_margin_ratio(float(out["margin_ratio"]))
     return out
+
+
+def validate_margin_ratio(value: float) -> float:
+    """Validate margin ratio is in [0, 1].
+
+    Args:
+        value: Margin ratio (expected range 0.0 – 1.0).
+
+    Returns:
+        Validated margin ratio.
+
+    Raises:
+        ValueError: If value is outside [0, 1].
+    """
+    if value < 0.0 or value > 1.0:
+        raise ValueError(f"margin_ratio must be in [0, 1], got {value}")
+    return value

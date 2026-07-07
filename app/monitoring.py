@@ -7,6 +7,14 @@ from typing import Any
 import numpy as np
 from scipy import stats
 
+__all__ = [
+    "compute_psi",
+    "compute_drift",
+    "compute_feature_drift",
+    "prediction_health",
+    "check_alerts",
+]
+
 logger = logging.getLogger(__name__)
 
 _PSI_BINS: int = 10
@@ -107,7 +115,17 @@ def prediction_health(predictions: list[float]) -> dict[str, Any]:
         Dictionary with count, mean, std, min, max, and negative_count.
     """
     if not predictions:
-        return {"count": 0, "mean": 0.0, "std": 0.0, "min": 0.0, "max": 0.0, "negative_count": 0}
+        return {
+            "count": 0,
+            "mean": 0.0,
+            "std": 0.0,
+            "min": 0.0,
+            "max": 0.0,
+            "p25": 0.0,
+            "p50": 0.0,
+            "p75": 0.0,
+            "negative_count": 0,
+        }
     arr = np.array(predictions, dtype=float)
     return {
         "count": len(arr),
@@ -115,6 +133,9 @@ def prediction_health(predictions: list[float]) -> dict[str, Any]:
         "std": round(float(arr.std()), 4),
         "min": round(float(arr.min()), 4),
         "max": round(float(arr.max()), 4),
+        "p25": round(float(np.percentile(arr, 25)), 4),
+        "p50": round(float(np.percentile(arr, 50)), 4),
+        "p75": round(float(np.percentile(arr, 75)), 4),
         "negative_count": int((arr < 0).sum()),
     }
 

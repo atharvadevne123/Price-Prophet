@@ -1,9 +1,9 @@
 """Comprehensive tests for ML model training, prediction, and utilities."""
 from __future__ import annotations
 
-import pytest
-import tempfile
 import os
+
+import pytest
 
 
 @pytest.fixture
@@ -142,3 +142,39 @@ def test_train_with_cv(tmp_path):
     df = generate_synthetic_training_data(300)
     metrics = train_model(df, model_path=model_path, run_cv=True)
     assert "mae" in metrics
+
+
+@pytest.mark.parametrize("category", ["Electronics", "Books", "Food", "Automotive"])
+def test_predict_all_categories(trained_bundle, category):
+    _, model_path = trained_bundle
+    from app.model import predict
+    result = predict({"category": category, "stock_level": 50,
+                      "competitor_price": 100.0, "demand_trend": 1.0},
+                     model_path=model_path)
+    assert result > 0
+
+
+def test_train_model_r2_in_range(trained_bundle):
+    metrics, _ = trained_bundle
+    assert -1.0 <= metrics["r2"] <= 1.0
+
+
+def test_train_model_rmse_positive(trained_bundle):
+    metrics, _ = trained_bundle
+    assert metrics["rmse"] >= 0.0
+
+
+def test_predict_consistency(trained_bundle):
+    """Same input should produce same output."""
+    _, model_path = trained_bundle
+    from app.model import predict
+    features = {"category": "Electronics", "stock_level": 50, "competitor_price": 200.0, "demand_trend": 1.0}
+    r1 = predict(features, model_path=model_path)
+    r2 = predict(features, model_path=model_path)
+    assert r1 == pytest.approx(r2)
+
+
+def test_load_metrics_empty_on_missing_file():
+    from app.model import load_metrics
+    result = load_metrics("/nonexistent/metrics.json")
+    assert result == {}

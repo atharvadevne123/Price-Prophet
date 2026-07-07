@@ -1,6 +1,15 @@
 """Custom exception hierarchy for Price-Prophet."""
 from __future__ import annotations
 
+__all__ = [
+    "PriceProphetError",
+    "ModelNotTrainedError",
+    "ValidationError",
+    "FeatureEngineeringError",
+    "DatabaseError",
+    "RetrievalIndexError",
+]
+
 
 class PriceProphetError(Exception):
     """Base exception for all Price-Prophet errors."""

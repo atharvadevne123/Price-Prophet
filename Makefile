@@ -1,11 +1,15 @@
-.PHONY: install test lint lint-fix type-check run run-prod docker-build docker-up docker-down clean coverage-html train-local drift-check bench
+.PHONY: install test test-cov lint lint-fix type-check run run-prod docker-build docker-up docker-down clean coverage-html train-local drift-check bench
 
 install:
 	pip install -e ".[dev]"
 	pre-commit install
 
 test:
-	pytest tests/ --cov=app --cov-report=term-missing --cov-report=html --cov-fail-under=40
+	pytest tests/ --cov=app --cov-report=term-missing --cov-fail-under=60
+
+test-cov:
+	pytest tests/ --cov=app --cov-report=term-missing --cov-report=html --cov-fail-under=60
+	@echo "Coverage report: htmlcov/index.html"
 
 lint:
 	ruff check .

@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import logging
 import os
-from datetime import datetime
 from typing import Generator
 
 from sqlalchemy import Column, DateTime, Float, Index, Integer, String, create_engine, func
@@ -128,6 +127,36 @@ def init_db() -> None:
         eng = engine
     logger.info("Initialising database at %s", url)
     Base.metadata.create_all(bind=eng)
+
+
+def count_predictions(db: Session) -> int:
+    """Return total number of prediction records in the database.
+
+    Args:
+        db: Active SQLAlchemy session.
+
+    Returns:
+        Integer count of stored predictions.
+    """
+    return db.query(func.count(Prediction.id)).scalar() or 0
+
+
+def get_predictions_by_category(db: Session, category: str) -> list[Prediction]:
+    """Return all predictions for a given category ordered by creation time.
+
+    Args:
+        db: Active SQLAlchemy session.
+        category: Product category string to filter on.
+
+    Returns:
+        List of :class:`Prediction` instances.
+    """
+    return (
+        db.query(Prediction)
+        .filter(Prediction.category == category)
+        .order_by(Prediction.created_at.desc())
+        .all()
+    )
 
 
 def get_db() -> Generator[Session, None, None]:

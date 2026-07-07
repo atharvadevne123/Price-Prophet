@@ -9,15 +9,19 @@ from typing import Any
 
 import numpy as np
 import pandas as pd
+from lightgbm import LGBMRegressor
 from sklearn.ensemble import RandomForestRegressor, VotingRegressor
 from sklearn.metrics import mean_absolute_error, mean_squared_error, r2_score
 from sklearn.model_selection import KFold, cross_val_score
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
 from xgboost import XGBRegressor
-from lightgbm import LGBMRegressor
 
 from app.features import engineer_features
+
+__all__ = ["train_model", "load_model", "predict", "load_metrics", "get_feature_importance", "optimize_price"]
+
+_importance_cache: dict[str, dict[str, float]] = {}
 
 logger = logging.getLogger(__name__)
 
@@ -106,6 +110,7 @@ def train_model(
     with open(metrics_path, "w") as f:
         json.dump(metrics, f, indent=2)
 
+    _importance_cache.pop(model_path, None)
     logger.info("Trained: MAE=%.4f RMSE=%.4f R2=%.4f", mae, rmse, r2)
     return metrics
 
@@ -173,6 +178,8 @@ def get_feature_importance(model_path: str = MODEL_PATH) -> dict[str, float]:
     Raises:
         FileNotFoundError: If model not trained.
     """
+    if model_path in _importance_cache:
+        return _importance_cache[model_path]
     bundle = load_model(model_path)
     pipeline = bundle["pipeline"]
     feature_cols = bundle["feature_cols"]
@@ -187,7 +194,9 @@ def get_feature_importance(model_path: str = MODEL_PATH) -> dict[str, float]:
         return {}
     importances = rf_est.feature_importances_
     total = importances.sum() or 1.0
-    return {col: round(float(imp / total), 6) for col, imp in zip(feature_cols, importances)}
+    result = {col: round(float(imp / total), 6) for col, imp in zip(feature_cols, importances)}
+    _importance_cache[model_path] = result
+    return result
 
 
 def optimize_price(

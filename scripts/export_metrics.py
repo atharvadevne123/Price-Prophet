@@ -4,10 +4,13 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-import sys
+import logging
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
-def load_predictions_from_db(database_url: str) -> list[dict]:
+def load_predictions_from_db(database_url: str) -> list[dict[str, Any]]:
     """Load recent predictions from the database.
 
     Args:
@@ -29,11 +32,13 @@ def load_predictions_from_db(database_url: str) -> list[dict]:
             for r in rows
         ]
     except Exception as exc:
-        print(f"DB error: {exc}", file=sys.stderr)
+        logger.error("DB error: %s", exc)
         return []
 
 
 def main() -> None:
+    """Entry point: export model metrics and predictions to JSON/CSV."""
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Export Price-Prophet metrics")
     parser.add_argument("--db", default="sqlite:///./prices.db", help="Database URL")
     parser.add_argument("--model-metrics", default="models/metrics.json", help="Model metrics JSON")
@@ -60,14 +65,14 @@ def main() -> None:
     if args.output_json:
         with open(args.output_json, "w") as f:
             json.dump(output, f, indent=2)
-        print(f"\nJSON written to {args.output_json}", file=sys.stderr)
+        logger.info("JSON written to %s", args.output_json)
 
     if args.output_csv and predictions:
         with open(args.output_csv, "w", newline="") as f:
             writer = csv.DictWriter(f, fieldnames=predictions[0].keys())
             writer.writeheader()
             writer.writerows(predictions)
-        print(f"CSV written to {args.output_csv}", file=sys.stderr)
+        logger.info("CSV written to %s", args.output_csv)
 
 
 if __name__ == "__main__":

@@ -64,8 +64,9 @@ def test_index_size_positive():
 
 
 def test_add_increases_size():
-    from app.retrieval import get_index
     import numpy as np
+
+    from app.retrieval import get_index
     idx = get_index()
     before = idx.size
     vec = np.random.rand(idx.dim).astype("float32")
@@ -104,3 +105,63 @@ def test_batch_search_single_query():
     results = idx.batch_search(["Electronics"], k=2)
     assert len(results) == 1
     assert len(results[0]) <= 2
+
+
+def test_search_empty_index_returns_empty():
+    from app.retrieval import ProductIndex
+    idx = ProductIndex(dim=16)
+    results = idx.search("Electronics", k=3)
+    assert results == []
+
+
+def test_text_to_vector_deterministic():
+    from app.retrieval import _text_to_vector
+    v1 = _text_to_vector("Electronics", 32)
+    v2 = _text_to_vector("Electronics", 32)
+    assert (v1 == v2).all()
+
+
+def test_text_to_vector_unit_norm():
+    import numpy as np
+
+    from app.retrieval import _text_to_vector
+    v = _text_to_vector("test", 32)
+    assert abs(np.linalg.norm(v) - 1.0) < 1e-5
+
+
+def test_text_to_vector_different_inputs_differ():
+    from app.retrieval import _text_to_vector
+    v1 = _text_to_vector("Electronics", 32)
+    v2 = _text_to_vector("Clothing", 32)
+    assert not (v1 == v2).all()
+
+
+@pytest.mark.parametrize("k", [1, 5, 10, 20])
+def test_search_k_limit_respected(k):
+    from app.retrieval import get_index
+    idx = get_index()
+    results = idx.search("Electronics", k=k)
+    assert len(results) <= k
+
+
+def test_batch_search_invalid_k_raises():
+    from app.retrieval import get_index
+    idx = get_index()
+    with pytest.raises(ValueError, match="k must be between"):
+        idx.batch_search(["Electronics"], k=0)
+
+
+def test_batch_search_k_too_large_raises():
+    from app.retrieval import get_index
+    idx = get_index()
+    with pytest.raises(ValueError, match="k must be between"):
+        idx.batch_search(["Electronics"], k=100)
+
+
+@pytest.mark.parametrize("k", [1, 5, 25, 50])
+def test_batch_search_valid_k_range(k):
+    from app.retrieval import get_index
+    idx = get_index()
+    results = idx.batch_search(["Electronics"], k=k)
+    assert len(results) == 1
+    assert len(results[0]) <= k

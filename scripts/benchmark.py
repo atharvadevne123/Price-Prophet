@@ -2,13 +2,24 @@
 from __future__ import annotations
 
 import argparse
+import json
+import logging
 import statistics
 import time
 import urllib.request
-import json
+
+logger = logging.getLogger(__name__)
 
 
 def make_payload(category: str = "Electronics") -> bytes:
+    """Serialise a forecast request payload for the given category.
+
+    Args:
+        category: Product category to include in the payload.
+
+    Returns:
+        JSON-encoded bytes ready to POST to /forecast.
+    """
     data = {
         "category": category,
         "stock_level": 50,
@@ -19,8 +30,17 @@ def make_payload(category: str = "Electronics") -> bytes:
     return json.dumps(data).encode()
 
 
-def benchmark(base_url: str, n: int, endpoint: str) -> dict[str, float]:
-    """Run n requests against endpoint and return latency stats."""
+def benchmark(base_url: str, n: int, endpoint: str) -> dict[str, float | int]:
+    """Run n requests against endpoint and return latency statistics.
+
+    Args:
+        base_url: Base URL of the API (e.g., ``http://localhost:8000``).
+        n: Number of requests to issue.
+        endpoint: API endpoint path (e.g., ``/forecast``).
+
+    Returns:
+        Dict with min, max, mean, p50, p95, p99 latencies (ms) and error count.
+    """
     url = f"{base_url}{endpoint}"
     payload = make_payload()
     latencies: list[float] = []
@@ -33,7 +53,8 @@ def benchmark(base_url: str, n: int, endpoint: str) -> dict[str, float]:
         try:
             with urllib.request.urlopen(req, timeout=10):
                 pass
-        except Exception:
+        except Exception as exc:
+            logger.debug("Request failed: %s", exc)
             errors += 1
         else:
             latencies.append((time.perf_counter() - t0) * 1000)
@@ -55,25 +76,24 @@ def benchmark(base_url: str, n: int, endpoint: str) -> dict[str, float]:
 
 
 def main() -> None:
+    """Entry point: parse args, run benchmark, print results."""
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(description="Benchmark Price-Prophet API")
     parser.add_argument("--url", default="http://localhost:8000", help="Base URL")
     parser.add_argument("--n", type=int, default=100, help="Number of requests")
     parser.add_argument("--endpoint", default="/forecast", help="Endpoint to benchmark")
     args = parser.parse_args()
 
-    # Warm up
-    make_payload()
-
-    print(f"Benchmarking {args.url}{args.endpoint} with {args.n} requests...")
+    logger.info("Benchmarking %s%s with %d requests...", args.url, args.endpoint, args.n)
     stats = benchmark(args.url, args.n, args.endpoint)
 
-    print(f"  min:    {stats[min]} ms")
-    print(f"  max:    {stats[max]} ms")
-    print(f"  mean:   {stats[mean]} ms")
-    print(f"  p50:    {stats[p50]} ms")
-    print(f"  p95:    {stats[p95]} ms")
-    print(f"  p99:    {stats[p99]} ms")
-    print(f"  errors: {stats[errors]}/{args.n}")
+    logger.info("  min:    %s ms", stats["min"])
+    logger.info("  max:    %s ms", stats["max"])
+    logger.info("  mean:   %s ms", stats["mean"])
+    logger.info("  p50:    %s ms", stats["p50"])
+    logger.info("  p95:    %s ms", stats["p95"])
+    logger.info("  p99:    %s ms", stats["p99"])
+    logger.info("  errors: %s/%d", stats["errors"], args.n)
 
 
 if __name__ == "__main__":

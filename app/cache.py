@@ -5,6 +5,8 @@ import threading
 import time
 from typing import Any
 
+__all__ = ["TTLCache", "get_cache"]
+
 
 class TTLCache:
     """Thread-safe in-memory cache with per-entry time-to-live.

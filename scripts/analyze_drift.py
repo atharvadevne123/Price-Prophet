@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import argparse
 import json
+import logging
 import sys
+from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def load_values(path: str) -> list[float]:
@@ -16,13 +20,36 @@ def load_values(path: str) -> list[float]:
         if isinstance(data, dict) and "values" in data:
             return [float(v) for v in data["values"]]
     except (OSError, json.JSONDecodeError, ValueError) as exc:
-        print(f"Error loading {path}: {exc}", file=sys.stderr)
+        logger.error("Error loading %s: %s", path, exc)
         sys.exit(1)
-    print(f"Unrecognised format in {path}", file=sys.stderr)
+    logger.error("Unrecognised format in %s", path)
     sys.exit(1)
 
 
+def run_analysis(ref: list[float], cur: list[float]) -> dict[str, Any]:
+    """Compute drift metrics for two value lists.
+
+    Args:
+        ref: Reference distribution values.
+        cur: Current distribution values.
+
+    Returns:
+        Dict with drift results, alerts, and health metrics.
+    """
+    from app.monitoring import check_alerts, compute_drift, prediction_health
+    drift = compute_drift(ref, cur)
+    return {
+        "drift": drift,
+        "alerts": check_alerts(drift),
+        "current_health": prediction_health(cur),
+        "n_reference": len(ref),
+        "n_current": len(cur),
+    }
+
+
 def main() -> None:
+    """Entry point: parse args, analyse drift, print and optionally save results."""
+    logging.basicConfig(level=logging.INFO)
     parser = argparse.ArgumentParser(
         description="Analyse distributional drift between two value lists"
     )
@@ -36,28 +63,16 @@ def main() -> None:
     ref = load_values(args.reference)
     cur = load_values(args.current)
 
-    from app.monitoring import compute_drift, check_alerts, prediction_health
-
-    drift = compute_drift(ref, cur)
-    alerts = check_alerts(drift)
-    health = prediction_health(cur)
-
-    result = {
-        "drift": drift,
-        "alerts": alerts,
-        "current_health": health,
-        "n_reference": len(ref),
-        "n_current": len(cur),
-    }
+    result = run_analysis(ref, cur)
 
     print(json.dumps(result, indent=2))
 
     if args.output:
         with open(args.output, "w") as f:
             json.dump(result, f, indent=2)
-        print(f"\nResults written to {args.output}", file=sys.stderr)
+        logger.info("Results written to %s", args.output)
 
-    if alerts:
+    if result["alerts"]:
         sys.exit(1)
 
 
