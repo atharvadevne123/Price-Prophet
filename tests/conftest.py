@@ -1,4 +1,5 @@
 """Shared pytest fixtures for Price-Prophet test suite."""
+
 from __future__ import annotations
 
 import os
@@ -11,6 +12,7 @@ from fastapi.testclient import TestClient
 def client():
     """Provide a TestClient for the FastAPI app."""
     from app.main import app
+
     return TestClient(app)
 
 
@@ -31,9 +33,24 @@ def sample_batch_payload():
     """Batch forecast request payload with 3 items."""
     return {
         "items": [
-            {"category": "Electronics", "stock_level": 50, "competitor_price": 299.99, "demand_trend": 1.2},
-            {"category": "Books", "stock_level": 20, "competitor_price": 15.99, "demand_trend": 0.8},
-            {"category": "Clothing", "stock_level": 30, "competitor_price": 49.99, "demand_trend": 1.0},
+            {
+                "category": "Electronics",
+                "stock_level": 50,
+                "competitor_price": 299.99,
+                "demand_trend": 1.2,
+            },
+            {
+                "category": "Books",
+                "stock_level": 20,
+                "competitor_price": 15.99,
+                "demand_trend": 0.8,
+            },
+            {
+                "category": "Clothing",
+                "stock_level": 30,
+                "competitor_price": 49.99,
+                "demand_trend": 1.0,
+            },
         ]
     }
 
@@ -42,6 +59,7 @@ def sample_batch_payload():
 def trained_client():
     """TestClient with model trained once for the module scope."""
     from app.main import app
+
     c = TestClient(app)
     c.post("/train")
     return c

@@ -1,4 +1,5 @@
 """Centralised logging configuration for Price-Prophet."""
+
 from __future__ import annotations
 
 import logging

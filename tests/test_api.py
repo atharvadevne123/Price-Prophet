@@ -1,4 +1,5 @@
 """Comprehensive API endpoint tests for Price-Prophet."""
+
 from __future__ import annotations
 
 import pytest
@@ -8,6 +9,7 @@ from fastapi.testclient import TestClient
 @pytest.fixture(scope="module")
 def client():
     from app.main import app
+
     return TestClient(app)
 
 
@@ -36,23 +38,29 @@ def test_train(client):
 
 
 def test_forecast_requires_training(trained_client):
-    r = trained_client.post("/forecast", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "competitor_price": 299.99,
-        "demand_trend": 1.2,
-    })
+    r = trained_client.post(
+        "/forecast",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 299.99,
+            "demand_trend": 1.2,
+        },
+    )
     assert r.status_code == 200
     assert "recommended_price" in r.json()
 
 
 def test_forecast_has_confidence_interval(trained_client):
-    r = trained_client.post("/forecast", json={
-        "category": "Clothing",
-        "stock_level": 30,
-        "competitor_price": 49.99,
-        "demand_trend": 0.9,
-    })
+    r = trained_client.post(
+        "/forecast",
+        json={
+            "category": "Clothing",
+            "stock_level": 30,
+            "competitor_price": 49.99,
+            "demand_trend": 0.9,
+        },
+    )
     assert r.status_code == 200
     ci = r.json()["confidence_interval"]
     assert len(ci) == 2
@@ -60,10 +68,25 @@ def test_forecast_has_confidence_interval(trained_client):
 
 
 def test_batch_forecast_endpoint(trained_client):
-    r = trained_client.post("/batch-forecast", json={"items": [
-        {"category": "Electronics", "stock_level": 50, "competitor_price": 299.99, "demand_trend": 1.2},
-        {"category": "Books", "stock_level": 20, "competitor_price": 15.99, "demand_trend": 0.8},
-    ]})
+    r = trained_client.post(
+        "/batch-forecast",
+        json={
+            "items": [
+                {
+                    "category": "Electronics",
+                    "stock_level": 50,
+                    "competitor_price": 299.99,
+                    "demand_trend": 1.2,
+                },
+                {
+                    "category": "Books",
+                    "stock_level": 20,
+                    "competitor_price": 15.99,
+                    "demand_trend": 0.8,
+                },
+            ]
+        },
+    )
     assert r.status_code == 200
     data = r.json()
     assert data["count"] == 2
@@ -78,7 +101,12 @@ def test_batch_forecast_empty_rejected(client):
 @pytest.mark.parametrize("n_items", [1, 5, 10])
 def test_batch_forecast_variable_sizes(trained_client, n_items):
     items = [
-        {"category": "Electronics", "stock_level": 50, "competitor_price": 200.0, "demand_trend": 1.0}
+        {
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 200.0,
+            "demand_trend": 1.0,
+        }
         for _ in range(n_items)
     ]
     r = trained_client.post("/batch-forecast", json={"items": items})
@@ -86,15 +114,28 @@ def test_batch_forecast_variable_sizes(trained_client, n_items):
     assert r.json()["count"] == n_items
 
 
-@pytest.mark.parametrize("category,price", [
-    ("Books", 15.0),
-    ("Food", 5.0),
-    ("Sports", 150.0),
-])
+@pytest.mark.parametrize(
+    "category,price",
+    [
+        ("Books", 15.0),
+        ("Food", 5.0),
+        ("Sports", 150.0),
+    ],
+)
 def test_batch_forecast_mixed_categories(trained_client, category, price):
-    r = trained_client.post("/batch-forecast", json={"items": [
-        {"category": category, "stock_level": 30, "competitor_price": price, "demand_trend": 1.0}
-    ]})
+    r = trained_client.post(
+        "/batch-forecast",
+        json={
+            "items": [
+                {
+                    "category": category,
+                    "stock_level": 30,
+                    "competitor_price": price,
+                    "demand_trend": 1.0,
+                }
+            ]
+        },
+    )
     assert r.status_code == 200
     result = r.json()["results"][0]
     assert result["category"] == category
@@ -142,44 +183,56 @@ def test_summary_endpoint(client):
 
 @pytest.mark.parametrize("category", ["Electronics", "Clothing", "Food", "Books"])
 def test_forecast_all_categories(trained_client, category):
-    r = trained_client.post("/forecast", json={
-        "category": category,
-        "stock_level": 50,
-        "competitor_price": 100.0,
-        "demand_trend": 1.0,
-    })
+    r = trained_client.post(
+        "/forecast",
+        json={
+            "category": category,
+            "stock_level": 50,
+            "competitor_price": 100.0,
+            "demand_trend": 1.0,
+        },
+    )
     assert r.status_code == 200
 
 
 def test_forecast_recommendation_values(trained_client):
-    r = trained_client.post("/forecast", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "competitor_price": 299.99,
-        "demand_trend": 1.2,
-    })
+    r = trained_client.post(
+        "/forecast",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 299.99,
+            "demand_trend": 1.2,
+        },
+    )
     price = r.json()["recommended_price"]
     assert price > 0
 
 
 def test_metrics_after_forecast(trained_client):
-    trained_client.post("/forecast", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "competitor_price": 299.99,
-        "demand_trend": 1.2,
-    })
+    trained_client.post(
+        "/forecast",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 299.99,
+            "demand_trend": 1.2,
+        },
+    )
     r = trained_client.get("/metrics")
     assert r.status_code == 200
 
 
 def test_forecast_x_process_time_header(trained_client):
-    r = trained_client.post("/forecast", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "competitor_price": 299.99,
-        "demand_trend": 1.0,
-    })
+    r = trained_client.post(
+        "/forecast",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 299.99,
+            "demand_trend": 1.0,
+        },
+    )
     assert "x-process-time" in r.headers
 
 
@@ -231,12 +284,15 @@ def test_predictions_has_pagination_metadata(client):
 
 def test_predictions_next_offset_when_more(trained_client):
     for _ in range(3):
-        trained_client.post("/forecast", json={
-            "category": "Electronics",
-            "stock_level": 50,
-            "competitor_price": 299.99,
-            "demand_trend": 1.0,
-        })
+        trained_client.post(
+            "/forecast",
+            json={
+                "category": "Electronics",
+                "stock_level": 50,
+                "competitor_price": 299.99,
+                "demand_trend": 1.0,
+            },
+        )
     r = trained_client.get("/predictions?limit=1&offset=0")
     body = r.json()
     if body["total"] > 1:
@@ -252,12 +308,15 @@ def test_similar_various_k(trained_client, k):
 
 
 def test_forecast_invalid_category_rejected(client):
-    r = client.post("/forecast", json={
-        "category": "InvalidCat",
-        "stock_level": 50,
-        "competitor_price": 100.0,
-        "demand_trend": 1.0,
-    })
+    r = client.post(
+        "/forecast",
+        json={
+            "category": "InvalidCat",
+            "stock_level": 50,
+            "competitor_price": 100.0,
+            "demand_trend": 1.0,
+        },
+    )
     assert r.status_code == 422
 
 
@@ -288,15 +347,18 @@ def test_cache_clear_endpoint(client):
 
 
 def test_optimize_price_endpoint(trained_client):
-    r = trained_client.post("/optimize-price", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "demand_trend": 1.2,
-        "margin_ratio": 0.3,
-        "price_min": 100.0,
-        "price_max": 500.0,
-        "n_steps": 10,
-    })
+    r = trained_client.post(
+        "/optimize-price",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "demand_trend": 1.2,
+            "margin_ratio": 0.3,
+            "price_min": 100.0,
+            "price_max": 500.0,
+            "n_steps": 10,
+        },
+    )
     assert r.status_code == 200
     body = r.json()
     assert "optimal_price" in body
@@ -305,14 +367,17 @@ def test_optimize_price_endpoint(trained_client):
 
 
 def test_optimize_price_invalid_range(trained_client):
-    r = trained_client.post("/optimize-price", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "demand_trend": 1.0,
-        "margin_ratio": 0.3,
-        "price_min": 500.0,
-        "price_max": 100.0,
-    })
+    r = trained_client.post(
+        "/optimize-price",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "demand_trend": 1.0,
+            "margin_ratio": 0.3,
+            "price_min": 500.0,
+            "price_max": 100.0,
+        },
+    )
     assert r.status_code == 400
 
 
@@ -365,25 +430,31 @@ def test_predictions_count_endpoint(client):
 
 def test_predictions_count_increases_after_forecast(trained_client):
     before = trained_client.get("/predictions/count").json()["count"]
-    trained_client.post("/forecast", json={
-        "category": "Electronics",
-        "stock_level": 50,
-        "competitor_price": 299.99,
-        "demand_trend": 1.0,
-    })
+    trained_client.post(
+        "/forecast",
+        json={
+            "category": "Electronics",
+            "stock_level": 50,
+            "competitor_price": 299.99,
+            "demand_trend": 1.0,
+        },
+    )
     after = trained_client.get("/predictions/count").json()["count"]
     assert after == before + 1
 
 
 @pytest.mark.parametrize("category", ["Books", "Food", "Toys"])
 def test_optimize_price_all_categories(trained_client, category):
-    r = trained_client.post("/optimize-price", json={
-        "category": category,
-        "stock_level": 30,
-        "demand_trend": 1.0,
-        "margin_ratio": 0.25,
-        "price_min": 5.0,
-        "price_max": 200.0,
-    })
+    r = trained_client.post(
+        "/optimize-price",
+        json={
+            "category": category,
+            "stock_level": 30,
+            "demand_trend": 1.0,
+            "margin_ratio": 0.25,
+            "price_min": 5.0,
+            "price_max": 200.0,
+        },
+    )
     assert r.status_code == 200
     assert r.json()["optimal_price"] > 0

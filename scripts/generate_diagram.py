@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Generate ASCII architecture diagram for Price-Prophet."""
+
 from __future__ import annotations
 
 DIAGRAM = """

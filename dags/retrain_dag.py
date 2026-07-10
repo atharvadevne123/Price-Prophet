@@ -1,4 +1,5 @@
 """Apache Airflow DAG: automated model retraining with drift-triggered execution."""
+
 from __future__ import annotations
 
 import logging
@@ -39,10 +40,9 @@ def check_drift(**context: Any) -> bool:
 
     engine = create_engine(DATABASE_URL)
     with engine.connect() as conn:
-        rows = conn.execute(text(
-            "SELECT predicted_price FROM predictions "
-            "ORDER BY created_at ASC LIMIT 2000"
-        )).fetchall()
+        rows = conn.execute(
+            text("SELECT predicted_price FROM predictions ORDER BY created_at ASC LIMIT 2000")
+        ).fetchall()
     prices = [float(r[0]) for r in rows if r[0] is not None]
 
     if len(prices) < MIN_SAMPLES_FOR_DRIFT:
@@ -58,7 +58,9 @@ def check_drift(**context: Any) -> bool:
     should_retrain = drift["is_drifted"]
     logger.info(
         "Drift check: KS_p=%.4f PSI=%.4f should_retrain=%s",
-        ks_p, psi, should_retrain,
+        ks_p,
+        psi,
+        should_retrain,
     )
     context["ti"].xcom_push(key="should_retrain", value=should_retrain)
     context["ti"].xcom_push(key="drift_result", value=drift)
@@ -107,7 +109,6 @@ with DAG(
     catchup=False,
     tags=["ml", "price-prophet", "retraining"],
 ) as dag:
-
     check_drift_task = PythonOperator(
         task_id="check_drift",
         python_callable=check_drift,

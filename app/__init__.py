@@ -3,6 +3,7 @@
 Provides a FastAPI REST API for demand forecasting, price optimization,
 product similarity search, and feature drift detection.
 """
+
 from __future__ import annotations
 
 __version__ = "1.0.1"

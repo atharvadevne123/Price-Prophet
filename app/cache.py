@@ -1,4 +1,5 @@
 """Simple thread-safe in-memory TTL cache for Price-Prophet."""
+
 from __future__ import annotations
 
 import threading

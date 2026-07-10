@@ -1,4 +1,5 @@
 """ML model: ensemble training, prediction, and feature importance."""
+
 from __future__ import annotations
 
 import logging
@@ -19,7 +20,14 @@ from xgboost import XGBRegressor
 
 from app.features import engineer_features
 
-__all__ = ["train_model", "load_model", "predict", "load_metrics", "get_feature_importance", "optimize_price"]
+__all__ = [
+    "train_model",
+    "load_model",
+    "predict",
+    "load_metrics",
+    "get_feature_importance",
+    "optimize_price",
+]
 
 _importance_cache: dict[str, dict[str, float]] = {}
 
@@ -37,14 +45,31 @@ def build_ensemble() -> VotingRegressor:
         Unfitted :class:`VotingRegressor` with XGB, LGBM, and RF estimators.
     """
     estimators: list[tuple[str, object]] = [
-        ("xgb", XGBRegressor(n_estimators=200, max_depth=6, learning_rate=0.05,
-                              subsample=0.8, colsample_bytree=0.8,
-                              random_state=42, verbosity=0)),
-        ("lgbm", LGBMRegressor(n_estimators=200, max_depth=6, learning_rate=0.05,
-                                subsample=0.8, colsample_bytree=0.8,
-                                random_state=42, verbose=-1)),
-        ("rf", RandomForestRegressor(n_estimators=200, max_depth=8,
-                                      random_state=42, n_jobs=-1)),
+        (
+            "xgb",
+            XGBRegressor(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                verbosity=0,
+            ),
+        ),
+        (
+            "lgbm",
+            LGBMRegressor(
+                n_estimators=200,
+                max_depth=6,
+                learning_rate=0.05,
+                subsample=0.8,
+                colsample_bytree=0.8,
+                random_state=42,
+                verbose=-1,
+            ),
+        ),
+        ("rf", RandomForestRegressor(n_estimators=200, max_depth=8, random_state=42, n_jobs=-1)),
     ]
     return VotingRegressor(estimators=estimators)
 
@@ -55,10 +80,12 @@ def build_pipeline() -> Pipeline:
     Returns:
         Unfitted :class:`Pipeline` with scaler + VotingRegressor.
     """
-    return Pipeline([
-        ("scaler", StandardScaler()),
-        ("model", build_ensemble()),
-    ])
+    return Pipeline(
+        [
+            ("scaler", StandardScaler()),
+            ("model", build_ensemble()),
+        ]
+    )
 
 
 def train_model(
@@ -102,6 +129,7 @@ def train_model(
         pickle.dump({"pipeline": pipeline, "feature_cols": feature_cols}, f)
 
     import json
+
     metrics: dict[str, object] = {"mae": round(mae, 4), "rmse": round(rmse, 4), "r2": round(r2, 4)}
     if cv_mae is not None:
         metrics["cv_mae_mean"] = round(cv_mae, 4)
@@ -159,6 +187,7 @@ def load_metrics(model_path: str = METRICS_PATH) -> dict[str, Any]:
         Dict with metric values, or empty dict if file not found.
     """
     import json
+
     try:
         with open(model_path) as f:
             return json.load(f)

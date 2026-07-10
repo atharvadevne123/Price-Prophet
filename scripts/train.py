@@ -1,4 +1,5 @@
 """Standalone training script with configurable parameters."""
+
 from __future__ import annotations
 
 import argparse

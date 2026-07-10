@@ -1,4 +1,5 @@
 """SQLAlchemy ORM models and database session management."""
+
 from __future__ import annotations
 
 import logging
@@ -50,9 +51,7 @@ class Prediction(Base):
     demand_trend = Column(Float, nullable=True)
     created_at = Column(DateTime, default=func.now(), nullable=False)
 
-    __table_args__ = (
-        Index("ix_predictions_category_created", "category", "created_at"),
-    )
+    __table_args__ = (Index("ix_predictions_category_created", "category", "created_at"),)
 
     def __repr__(self) -> str:
         return f"<Prediction id={self.id} category={self.category!r} price={self.predicted_price}>"
@@ -122,7 +121,9 @@ def init_db() -> None:
     """
     url = os.getenv("DATABASE_URL", DATABASE_URL)
     if url != DATABASE_URL:
-        eng = create_engine(url, connect_args={"check_same_thread": False} if "sqlite" in url else {})
+        eng = create_engine(
+            url, connect_args={"check_same_thread": False} if "sqlite" in url else {}
+        )
     else:
         eng = engine
     logger.info("Initialising database at %s", url)

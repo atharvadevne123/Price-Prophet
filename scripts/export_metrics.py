@@ -1,4 +1,5 @@
 """Export model metrics and drift stats to JSON/CSV."""
+
 from __future__ import annotations
 
 import argparse
@@ -21,12 +22,15 @@ def load_predictions_from_db(database_url: str) -> list[dict[str, Any]]:
     """
     try:
         from sqlalchemy import create_engine, text
+
         engine = create_engine(database_url)
         with engine.connect() as conn:
-            rows = conn.execute(text(
-                "SELECT id, category, predicted_price, created_at "
-                "FROM predictions ORDER BY created_at DESC LIMIT 1000"
-            )).fetchall()
+            rows = conn.execute(
+                text(
+                    "SELECT id, category, predicted_price, created_at "
+                    "FROM predictions ORDER BY created_at DESC LIMIT 1000"
+                )
+            ).fetchall()
         return [
             {"id": r[0], "category": r[1], "predicted_price": r[2], "created_at": str(r[3])}
             for r in rows

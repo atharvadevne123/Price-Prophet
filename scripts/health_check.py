@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Health check script for Price-Prophet API."""
+
 from __future__ import annotations
 
 import argparse

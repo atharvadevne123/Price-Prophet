@@ -1,4 +1,5 @@
 """Offline drift analysis tool: compare training vs production distributions."""
+
 from __future__ import annotations
 
 import argparse
@@ -37,6 +38,7 @@ def run_analysis(ref: list[float], cur: list[float]) -> dict[str, Any]:
         Dict with drift results, alerts, and health metrics.
     """
     from app.monitoring import check_alerts, compute_drift, prediction_health
+
     drift = compute_drift(ref, cur)
     return {
         "drift": drift,

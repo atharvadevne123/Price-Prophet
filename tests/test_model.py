@@ -1,4 +1,5 @@
 """Comprehensive tests for ML model training, prediction, and utilities."""
+
 from __future__ import annotations
 
 import os
@@ -25,6 +26,7 @@ def trained_bundle(tmp_model, tmp_metrics, monkeypatch):
     monkeypatch.setenv("METRICS_PATH", tmp_metrics)
     from app.features import generate_synthetic_training_data
     from app.model import train_model
+
     df = generate_synthetic_training_data(200)
     metrics = train_model(df, model_path=tmp_model, run_cv=False)
     return metrics, tmp_model
@@ -32,18 +34,21 @@ def trained_bundle(tmp_model, tmp_metrics, monkeypatch):
 
 def test_build_ensemble_has_three_estimators():
     from app.model import build_ensemble
+
     ens = build_ensemble()
     assert len(ens.estimators) == 3
 
 
 def test_build_ensemble_has_at_least_one_estimator():
     from app.model import build_ensemble
+
     ens = build_ensemble()
     assert len(ens.estimators) >= 1
 
 
 def test_build_pipeline_has_scaler():
     from app.model import build_pipeline
+
     pipe = build_pipeline()
     assert "scaler" in pipe.named_steps
 
@@ -73,6 +78,7 @@ def test_metrics_persisted_to_disk(trained_bundle, tmp_metrics):
 def test_load_metrics_returns_dict(trained_bundle, tmp_metrics):
     _, _ = trained_bundle
     from app.model import load_metrics
+
     m = load_metrics(tmp_metrics)
     assert isinstance(m, dict)
 
@@ -80,8 +86,13 @@ def test_load_metrics_returns_dict(trained_bundle, tmp_metrics):
 def test_predict_returns_positive(trained_bundle):
     _, model_path = trained_bundle
     from app.model import predict
-    features = {"category": "Electronics", "stock_level": 50,
-                "competitor_price": 299.99, "demand_trend": 1.2}
+
+    features = {
+        "category": "Electronics",
+        "stock_level": 50,
+        "competitor_price": 299.99,
+        "demand_trend": 1.2,
+    }
     result = predict(features, model_path=model_path)
     assert result > 0
 
@@ -89,8 +100,13 @@ def test_predict_returns_positive(trained_bundle):
 def test_predict_single_sample(trained_bundle):
     _, model_path = trained_bundle
     from app.model import predict
-    features = {"category": "Books", "stock_level": 10,
-                "competitor_price": 20.0, "demand_trend": 0.8}
+
+    features = {
+        "category": "Books",
+        "stock_level": 10,
+        "competitor_price": 20.0,
+        "demand_trend": 0.8,
+    }
     result = predict(features, model_path=model_path)
     assert isinstance(result, float)
 
@@ -98,9 +114,13 @@ def test_predict_single_sample(trained_bundle):
 def test_optimize_price_range(trained_bundle):
     _, model_path = trained_bundle
     from app.model import optimize_price
+
     result = optimize_price(
         {"category": "Electronics", "stock_level": 50, "demand_trend": 1.0},
-        price_min=50.0, price_max=500.0, n_steps=10, model_path=model_path,
+        price_min=50.0,
+        price_max=500.0,
+        n_steps=10,
+        model_path=model_path,
     )
     assert 50.0 <= result["optimal_price"] <= 500.0
 
@@ -109,9 +129,11 @@ def test_optimize_price_range(trained_bundle):
 def test_optimize_price_n_steps(trained_bundle, n_steps):
     _, model_path = trained_bundle
     from app.model import optimize_price
+
     result = optimize_price(
         {"category": "Electronics", "stock_level": 50, "demand_trend": 1.0},
-        n_steps=n_steps, model_path=model_path,
+        n_steps=n_steps,
+        model_path=model_path,
     )
     assert "optimal_price" in result
 
@@ -119,6 +141,7 @@ def test_optimize_price_n_steps(trained_bundle, n_steps):
 def test_get_feature_importance_returns_dict(trained_bundle):
     _, model_path = trained_bundle
     from app.model import get_feature_importance
+
     imp = get_feature_importance(model_path=model_path)
     assert isinstance(imp, dict)
     if imp:
@@ -128,6 +151,7 @@ def test_get_feature_importance_returns_dict(trained_bundle):
 
 def test_load_model_raises_on_missing():
     from app.model import load_model
+
     with pytest.raises(FileNotFoundError):
         load_model("/nonexistent/path/model.pkl")
 
@@ -135,9 +159,11 @@ def test_load_model_raises_on_missing():
 def test_train_with_cv(tmp_path):
     from app.features import generate_synthetic_training_data
     from app.model import train_model
+
     model_path = str(tmp_path / "model.pkl")
     metrics_path = str(tmp_path / "metrics.json")
     import os
+
     os.environ["METRICS_PATH"] = metrics_path
     df = generate_synthetic_training_data(300)
     metrics = train_model(df, model_path=model_path, run_cv=True)
@@ -148,9 +174,11 @@ def test_train_with_cv(tmp_path):
 def test_predict_all_categories(trained_bundle, category):
     _, model_path = trained_bundle
     from app.model import predict
-    result = predict({"category": category, "stock_level": 50,
-                      "competitor_price": 100.0, "demand_trend": 1.0},
-                     model_path=model_path)
+
+    result = predict(
+        {"category": category, "stock_level": 50, "competitor_price": 100.0, "demand_trend": 1.0},
+        model_path=model_path,
+    )
     assert result > 0
 
 
@@ -168,7 +196,13 @@ def test_predict_consistency(trained_bundle):
     """Same input should produce same output."""
     _, model_path = trained_bundle
     from app.model import predict
-    features = {"category": "Electronics", "stock_level": 50, "competitor_price": 200.0, "demand_trend": 1.0}
+
+    features = {
+        "category": "Electronics",
+        "stock_level": 50,
+        "competitor_price": 200.0,
+        "demand_trend": 1.0,
+    }
     r1 = predict(features, model_path=model_path)
     r2 = predict(features, model_path=model_path)
     assert r1 == pytest.approx(r2)
@@ -176,5 +210,6 @@ def test_predict_consistency(trained_bundle):
 
 def test_load_metrics_empty_on_missing_file():
     from app.model import load_metrics
+
     result = load_metrics("/nonexistent/metrics.json")
     assert result == {}

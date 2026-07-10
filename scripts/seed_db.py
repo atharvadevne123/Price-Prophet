@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 """Seed the database with synthetic predictions for development."""
+
 from __future__ import annotations
 
 import argparse

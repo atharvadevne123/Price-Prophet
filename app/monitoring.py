@@ -1,4 +1,5 @@
 """Statistical drift monitoring with KS-test and PSI."""
+
 from __future__ import annotations
 
 import logging

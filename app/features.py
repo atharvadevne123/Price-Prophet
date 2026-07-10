@@ -1,4 +1,5 @@
 """Feature engineering for Price-Prophet ML pipeline."""
+
 from __future__ import annotations
 
 import math
@@ -7,7 +8,12 @@ from typing import Any
 
 import pandas as pd
 
-__all__ = ["CATEGORY_MAP", "HOLIDAY_MONTHS", "engineer_features", "generate_synthetic_training_data"]
+__all__ = [
+    "CATEGORY_MAP",
+    "HOLIDAY_MONTHS",
+    "engineer_features",
+    "generate_synthetic_training_data",
+]
 
 CATEGORY_MAP: dict[str, int] = {
     "Electronics": 0,
@@ -51,21 +57,25 @@ def engineer_features(data: dict[str, Any]) -> pd.DataFrame:
     scarcity_score: float = max(0.0, 1.0 - stock_level / 1000.0)
     value_index: float = demand_trend * margin_ratio * (1.0 + is_holiday * 0.2)
 
-    return pd.DataFrame([{
-        "category_code": cat_code,
-        "stock_level": stock_level,
-        "competitor_price": competitor_price,
-        "demand_trend": demand_trend,
-        "margin_ratio": margin_ratio,
-        "is_holiday": is_holiday,
-        "price_per_unit": price_per_unit,
-        "demand_price_interaction": demand_price_interaction,
-        "stock_demand_ratio": stock_demand_ratio,
-        "log_price": log_price,
-        "margin_price": margin_price,
-        "scarcity_score": scarcity_score,
-        "value_index": value_index,
-    }])
+    return pd.DataFrame(
+        [
+            {
+                "category_code": cat_code,
+                "stock_level": stock_level,
+                "competitor_price": competitor_price,
+                "demand_trend": demand_trend,
+                "margin_ratio": margin_ratio,
+                "is_holiday": is_holiday,
+                "price_per_unit": price_per_unit,
+                "demand_price_interaction": demand_price_interaction,
+                "stock_demand_ratio": stock_demand_ratio,
+                "log_price": log_price,
+                "margin_price": margin_price,
+                "scarcity_score": scarcity_score,
+                "value_index": value_index,
+            }
+        ]
+    )
 
 
 def engineer_batch_features(items: list[dict[str, Any]]) -> pd.DataFrame:
@@ -101,7 +111,8 @@ def generate_synthetic_training_data(n: int = 5000) -> pd.DataFrame:
         is_holiday = int(month in HOLIDAY_MONTHS)
         noise = random.gauss(0, competitor_price * 0.05)
         price = (
-            competitor_price * (0.8 + demand_trend * 0.15)
+            competitor_price
+            * (0.8 + demand_trend * 0.15)
             * (1 + margin_ratio * 0.3)
             * (1 + is_holiday * 0.1)
             * (1 - stock_level / 5000)
@@ -116,20 +127,22 @@ def generate_synthetic_training_data(n: int = 5000) -> pd.DataFrame:
         margin_price = competitor_price * margin_ratio
         scarcity_score = max(0.0, 1.0 - stock_level / 1000.0)
         value_index = demand_trend * margin_ratio * (1.0 + is_holiday * 0.2)
-        rows.append({
-            "category_code": cat_code,
-            "stock_level": float(stock_level),
-            "competitor_price": competitor_price,
-            "demand_trend": demand_trend,
-            "margin_ratio": margin_ratio,
-            "is_holiday": is_holiday,
-            "price_per_unit": price_per_unit,
-            "demand_price_interaction": demand_price_interaction,
-            "stock_demand_ratio": stock_demand_ratio,
-            "log_price": log_price,
-            "margin_price": margin_price,
-            "scarcity_score": scarcity_score,
-            "value_index": value_index,
-            "price": price,
-        })
+        rows.append(
+            {
+                "category_code": cat_code,
+                "stock_level": float(stock_level),
+                "competitor_price": competitor_price,
+                "demand_trend": demand_trend,
+                "margin_ratio": margin_ratio,
+                "is_holiday": is_holiday,
+                "price_per_unit": price_per_unit,
+                "demand_price_interaction": demand_price_interaction,
+                "stock_demand_ratio": stock_demand_ratio,
+                "log_price": log_price,
+                "margin_price": margin_price,
+                "scarcity_score": scarcity_score,
+                "value_index": value_index,
+                "price": price,
+            }
+        )
     return pd.DataFrame(rows)

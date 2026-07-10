@@ -1,4 +1,5 @@
 """Benchmark Price-Prophet API response times."""
+
 from __future__ import annotations
 
 import argparse

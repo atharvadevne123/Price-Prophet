@@ -1,4 +1,5 @@
 """Input validation helpers for Price-Prophet API."""
+
 from __future__ import annotations
 
 from typing import Any
@@ -50,8 +51,7 @@ def validate_category(category: str) -> str:
     normalised = category.strip().title()
     if normalised not in VALID_CATEGORIES:
         raise ValueError(
-            f"Invalid category {category!r}. "
-            f"Allowed values: {sorted(VALID_CATEGORIES)}"
+            f"Invalid category {category!r}. Allowed values: {sorted(VALID_CATEGORIES)}"
         )
     return normalised
 
@@ -70,9 +70,7 @@ def validate_price(value: float, field: str = "price") -> float:
         ValueError: If price is outside valid range.
     """
     if value < _PRICE_MIN or value > _PRICE_MAX:
-        raise ValueError(
-            f"{field} must be between {_PRICE_MIN} and {_PRICE_MAX}, got {value}"
-        )
+        raise ValueError(f"{field} must be between {_PRICE_MIN} and {_PRICE_MAX}, got {value}")
     return value
 
 
@@ -89,9 +87,7 @@ def validate_stock(value: int) -> int:
         ValueError: If stock level is outside valid range.
     """
     if value < _STOCK_MIN or value > _STOCK_MAX:
-        raise ValueError(
-            f"stock_level must be between {_STOCK_MIN} and {_STOCK_MAX}, got {value}"
-        )
+        raise ValueError(f"stock_level must be between {_STOCK_MIN} and {_STOCK_MAX}, got {value}")
     return value
 
 

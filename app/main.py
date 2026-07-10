@@ -1,4 +1,5 @@
 """Price-Prophet FastAPI application."""
+
 from __future__ import annotations
 
 import logging
@@ -58,7 +59,9 @@ async def add_process_time_header(request: Request, call_next):
 
 @app.exception_handler(PriceProphetError)
 async def price_prophet_error_handler(request: Request, exc: PriceProphetError):
-    status = 400 if exc.code == "VALIDATION_ERROR" else 503 if exc.code == "MODEL_NOT_TRAINED" else 500
+    status = (
+        400 if exc.code == "VALIDATION_ERROR" else 503 if exc.code == "MODEL_NOT_TRAINED" else 500
+    )
     return JSONResponse(status_code=status, content=exc.to_dict())
 
 
@@ -104,6 +107,7 @@ def health() -> dict[str, str]:
 def health_detailed() -> dict[str, Any]:
     """Return service health with model and database status."""
     import os
+
     model_ok = os.path.exists(os.getenv("MODEL_PATH", "models/price_model.pkl"))
     db_ok = False
     try:
@@ -123,6 +127,7 @@ def health_detailed() -> dict[str, Any]:
 def categories() -> dict[str, Any]:
     """Return the list of valid product categories accepted by /forecast."""
     from app.features import CATEGORY_MAP
+
     return {"categories": sorted(CATEGORY_MAP.keys()), "count": len(CATEGORY_MAP)}
 
 
@@ -184,11 +189,13 @@ def batch_forecast(req: BatchForecastRequest) -> dict[str, Any]:
         try:
             features = item.model_dump()
             price = predict(features)
-            results.append({
-                "category": item.category,
-                "recommended_price": round(price, 2),
-                "confidence_interval": [round(price * 0.94, 2), round(price * 1.06, 2)],
-            })
+            results.append(
+                {
+                    "category": item.category,
+                    "recommended_price": round(price, 2),
+                    "confidence_interval": [round(price * 0.94, 2), round(price * 1.06, 2)],
+                }
+            )
         except FileNotFoundError as exc:
             raise ModelNotTrainedError() from exc
     return {"results": results, "count": len(results)}
@@ -198,6 +205,7 @@ def batch_forecast(req: BatchForecastRequest) -> dict[str, Any]:
 def metrics() -> dict[str, Any]:
     """Return current model evaluation metrics and cache statistics."""
     from app.cache import get_cache
+
     m = load_metrics()
     cache_stats = get_cache().stats()
     if not m:
@@ -222,9 +230,7 @@ def feature_importance() -> dict[str, Any]:
 def drift() -> dict[str, Any]:
     """Return KS-test and PSI drift analysis for recent predictions."""
     with SessionLocal() as db:
-        rows = db.query(Prediction.predicted_price).order_by(
-            Prediction.created_at.asc()
-        ).all()
+        rows = db.query(Prediction.predicted_price).order_by(Prediction.created_at.asc()).all()
     prices = [r[0] for r in rows if r[0] is not None]
     if len(prices) < 20:
         return {"status": "insufficient_data", "n_predictions": len(prices), "required": 20}
@@ -250,9 +256,11 @@ def summary() -> dict[str, Any]:
     with SessionLocal() as db:
         total = db.query(func.count(Prediction.id)).scalar() or 0
         avg_price = db.query(func.avg(Prediction.predicted_price)).scalar()
-        by_cat = db.query(
-            Prediction.category, func.count(Prediction.id)
-        ).group_by(Prediction.category).all()
+        by_cat = (
+            db.query(Prediction.category, func.count(Prediction.id))
+            .group_by(Prediction.category)
+            .all()
+        )
     return {
         "total_predictions": total,
         "average_predicted_price": round(float(avg_price), 2) if avg_price else None,
@@ -331,6 +339,7 @@ def optimize_price_endpoint(req: OptimizeRequest) -> dict[str, Any]:
 def model_info() -> dict[str, Any]:
     """Return model configuration, paths, and training status."""
     import os
+
     model_path = os.getenv("MODEL_PATH", "models/price_model.pkl")
     metrics_path = os.getenv("METRICS_PATH", "models/metrics.json")
     model_exists = os.path.exists(model_path)
@@ -356,6 +365,7 @@ def predictions_count() -> dict[str, int]:
 def cache_stats() -> dict[str, Any]:
     """Return current hit/miss statistics for the prediction cache."""
     from app.cache import get_cache
+
     return get_cache().stats()
 
 
@@ -363,5 +373,6 @@ def cache_stats() -> dict[str, Any]:
 def cache_clear() -> dict[str, str]:
     """Evict all entries from the in-memory prediction cache."""
     from app.cache import get_cache
+
     get_cache().clear()
     return {"status": "cleared"}

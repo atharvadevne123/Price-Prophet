@@ -1,4 +1,5 @@
 """Custom exception hierarchy for Price-Prophet."""
+
 from __future__ import annotations
 
 __all__ = [

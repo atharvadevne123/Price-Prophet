@@ -1,4 +1,5 @@
 """Tests for the TTL cache module."""
+
 from __future__ import annotations
 
 import time
@@ -9,6 +10,7 @@ import pytest
 @pytest.fixture
 def cache():
     from app.cache import TTLCache
+
     c = TTLCache(default_ttl=1.0)
     yield c
     c.clear()
@@ -85,6 +87,7 @@ def test_stats_structure(cache):
 
 def test_get_cache_singleton():
     from app.cache import get_cache
+
     c1 = get_cache()
     c2 = get_cache()
     assert c1 is c2
@@ -93,6 +96,7 @@ def test_get_cache_singleton():
 @pytest.mark.parametrize("value", [0, "", [], {}, None, 3.14, "hello"])
 def test_set_and_get_various_types(value):
     from app.cache import TTLCache
+
     c = TTLCache(default_ttl=10.0)
     c.set("k", value)
     assert c.get("k") == value

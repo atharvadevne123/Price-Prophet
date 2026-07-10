@@ -1,4 +1,5 @@
 """Tests for SQLAlchemy ORM models and database utilities."""
+
 from __future__ import annotations
 
 import pytest
@@ -10,6 +11,7 @@ from sqlalchemy.orm import Session
 def engine():
     """In-memory SQLite engine for test isolation."""
     from app.database import Base
+
     eng = create_engine("sqlite:///:memory:")
     Base.metadata.create_all(eng)
     yield eng
@@ -24,6 +26,7 @@ def session(engine):
 
 def test_prediction_model_creates(session):
     from app.database import Prediction
+
     p = Prediction(
         category="Electronics",
         input_price=299.99,
@@ -40,6 +43,7 @@ def test_prediction_model_creates(session):
 
 def test_prediction_repr(session):
     from app.database import Prediction
+
     p = Prediction(
         category="Books",
         input_price=15.0,
@@ -54,6 +58,7 @@ def test_prediction_repr(session):
 
 def test_drift_report_model_creates(session):
     from app.database import DriftReport
+
     d = DriftReport(ks_statistic=0.12, p_value=0.07, is_drifted=False, n_samples=100)
     session.add(d)
     session.commit()
@@ -62,6 +67,7 @@ def test_drift_report_model_creates(session):
 
 def test_drift_report_repr(session):
     from app.database import DriftReport
+
     d = DriftReport(ks_statistic=0.25, p_value=0.03, is_drifted=True, n_samples=50)
     session.add(d)
     session.commit()
@@ -70,6 +76,7 @@ def test_drift_report_repr(session):
 
 def test_training_run_model_creates(session):
     from app.database import TrainingRun
+
     t = TrainingRun(n_samples=500, mae=12.3, rmse=18.5, r2=0.91)
     session.add(t)
     session.commit()
@@ -78,6 +85,7 @@ def test_training_run_model_creates(session):
 
 def test_multiple_predictions_query(session):
     from app.database import Prediction
+
     for i in range(5):
         p = Prediction(
             category="Clothing",
@@ -92,14 +100,17 @@ def test_multiple_predictions_query(session):
 
 def test_init_db_runs(tmp_path):
     import os
+
     os.environ["DATABASE_URL"] = f"sqlite:///{tmp_path}/test.db"
     from app.database import init_db
+
     init_db()
     assert (tmp_path / "test.db").exists()
 
 
 def test_drift_report_model_insert(session):
     from app.database import DriftReport
+
     report = DriftReport(
         ks_statistic=0.15,
         p_value=0.03,
@@ -116,6 +127,7 @@ def test_drift_report_model_insert(session):
 
 def test_drift_report_not_drifted(session):
     from app.database import DriftReport
+
     report = DriftReport(ks_statistic=0.01, p_value=0.8, psi=0.02, is_drifted=False, n_samples=50)
     session.add(report)
     session.commit()
@@ -124,6 +136,7 @@ def test_drift_report_not_drifted(session):
 
 def test_get_db_yields_session():
     from app.database import get_db
+
     gen = get_db()
     db = next(gen)
     assert db is not None
@@ -135,25 +148,31 @@ def test_get_db_yields_session():
 
 def test_count_predictions_empty(session):
     from app.database import count_predictions
+
     assert count_predictions(session) == 0
 
 
 def test_count_predictions_after_insert(session):
     from app.database import Prediction, count_predictions
+
     for i in range(3):
-        session.add(Prediction(category="Sports", input_price=float(i * 10), predicted_price=float(i * 9)))
+        session.add(
+            Prediction(category="Sports", input_price=float(i * 10), predicted_price=float(i * 9))
+        )
     session.commit()
     assert count_predictions(session) == 3
 
 
 def test_get_predictions_by_category_empty(session):
     from app.database import get_predictions_by_category
+
     results = get_predictions_by_category(session, "Garden")
     assert results == []
 
 
 def test_get_predictions_by_category_filters(session):
     from app.database import Prediction, get_predictions_by_category
+
     session.add(Prediction(category="Home", input_price=50.0, predicted_price=48.0))
     session.add(Prediction(category="Beauty", input_price=30.0, predicted_price=28.0))
     session.commit()
@@ -165,6 +184,7 @@ def test_get_predictions_by_category_filters(session):
 @pytest.mark.parametrize("category", ["Electronics", "Toys", "Automotive"])
 def test_get_predictions_by_category_parametrize(session, category):
     from app.database import Prediction, get_predictions_by_category
+
     session.add(Prediction(category=category, input_price=100.0, predicted_price=95.0))
     session.commit()
     results = get_predictions_by_category(session, category)
