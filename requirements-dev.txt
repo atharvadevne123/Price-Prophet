@@ -10,7 +10,7 @@ types-requests>=2.31,<3
 
 # Documentation
 mkdocs>=1.6.1,<2
-mkdocs-material>=9.5,<10
+mkdocs-material>=9.7.6,<10
 
 # Profiling
 py-spy>=0.3,<1
